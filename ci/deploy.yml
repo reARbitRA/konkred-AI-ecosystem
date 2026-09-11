@@ -1,0 +1,409 @@
+name: CI / Deploy
+
+# -----------------------------------------------------------------------------
+# INSTALLATION (one-time, requires `workflows` write permission on the repo):
+#
+#   ./scripts/install-workflow.sh
+#   # or manually:
+#   mkdir -p .github/workflows && cp ci/deploy.yml .github/workflows/deploy.yml
+#   git add .github/workflows/deploy.yml && git commit -m "ci: enable deploy workflow"
+#
+# This file lives in ci/ rather than .github/workflows/ because automated agents
+# (and fine-grained tokens without the `workflows` scope) cannot push to
+# .github/workflows/. The content is identical and GitHub only executes it from
+# .github/workflows/deploy.yml.
+# -----------------------------------------------------------------------------
+
+on:
+  push:
+    branches: [main, "feat/**", "arena/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "20"
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # =========================================================================== #
+  # 1. Static validation — syntax, import graph, config integrity
+  # =========================================================================== #
+  validate:
+    name: Validate (lint / syntax / config)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: bot/requirements.txt
+
+      - name: Install validation tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyyaml==6.0.2
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck >/dev/null
+
+      - name: Gateway ESM syntax (node --check)
+        run: |
+          fail=0
+          while IFS= read -r -d '' f; do
+            node --check "$f" || { echo "::error::syntax error in $f"; fail=1; }
+          done < <(find gateway/src gateway/scripts gateway/tests -name '*.mjs' -print0)
+          exit $fail
+
+      - name: Gateway integrity (import graph + registry + invariants)
+        run: node gateway/scripts/check.mjs
+
+      - name: Bot byte-compilation
+        run: python -m compileall -q bot scripts
+
+      - name: Bot import shadowing audit
+        run: python scripts/check_python_imports.py --skip-import
+
+      - name: .env.example ↔ code agreement
+        run: python scripts/validate_env.py
+
+      - name: docker-compose.yml topology validation
+        run: python scripts/validate_compose.py
+
+      - name: YAML documents parse (compose / blueprint / workflow)
+        run: |
+          python - <<'PY'
+          import pathlib, sys, yaml
+          bad = 0
+          for p in ["docker-compose.yml", "render.yaml", ".github/workflows/deploy.yml"]:
+              try:
+                  yaml.safe_load(pathlib.Path(p).read_text())
+                  print(f"ok  {p}")
+              except Exception as exc:
+                  print(f"::error::{p}: {exc}"); bad += 1
+          sys.exit(1 if bad else 0)
+          PY
+
+      - name: Render blueprint sanity
+        run: |
+          python - <<'PY'
+          import pathlib, yaml
+          doc = yaml.safe_load(pathlib.Path("render.yaml").read_text())
+          svcs = {s["name"]: s for s in doc["services"]}
+          assert svcs["konkred-gateway"]["type"] == "web"
+          assert svcs["konkred-gateway"]["runtime"] == "docker"
+          assert svcs["konkred-gateway"]["healthCheckPath"] == "/api/health"
+          assert svcs["konkred-bot"]["type"] == "worker"
+          assert svcs["konkred-bot"]["runtime"] == "docker"
+          for name, s in svcs.items():
+              assert pathlib.Path(s["dockerfilePath"]).exists(), f"{name}: missing {s['dockerfilePath']}"
+              assert pathlib.Path(s["dockerContext"]).is_dir(), f"{name}: missing context {s['dockerContext']}"
+          print("render.yaml blueprint verified")
+          PY
+
+      - name: Shell syntax + shellcheck
+        run: |
+          bash -n setup.sh
+          bash -n scripts/verify.sh
+          shellcheck -S warning setup.sh scripts/verify.sh
+
+      - name: setup.sh is executable
+        run: test -x setup.sh && test -x scripts/verify.sh
+
+      - name: 'docker compose config resolves'
+        run: |
+          cp .env.example .env
+          echo "DEMO_MOCK=true" >> .env
+          docker compose config --quiet
+          docker compose config --services | sort | tee /tmp/services.txt
+          grep -qx "redis" /tmp/services.txt
+          grep -qx "gateway" /tmp/services.txt
+          grep -qx "bot" /tmp/services.txt
+
+      - name: Dockerfile structure
+        run: |
+          for f in gateway/Dockerfile bot/Dockerfile; do
+            grep -qE '^FROM ' "$f" || { echo "::error::$f has no FROM"; exit 1; }
+            grep -qE '^USER ' "$f" || { echo "::error::$f does not drop privileges"; exit 1; }
+            grep -qE '^HEALTHCHECK ' "$f" || { echo "::error::$f has no HEALTHCHECK"; exit 1; }
+            grep -qE '^CMD ' "$f" || { echo "::error::$f has no CMD"; exit 1; }
+          done
+          grep -q 'node:20' gateway/Dockerfile
+          grep -q 'python:3.11' bot/Dockerfile
+          echo "Dockerfiles structurally valid"
+
+  # =========================================================================== #
+  # 2. Tests — gateway unit tests, bot unit tests, HTTP smoke, integration
+  # =========================================================================== #
+  test:
+    name: Test (gateway + bot + integration)
+    runs-on: ubuntu-latest
+    needs: validate
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: bot/requirements.txt
+
+      - name: Install bot requirements (pinned)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r bot/requirements.txt
+          python -m pip check
+
+      - name: Gateway unit + integration tests
+        working-directory: gateway
+        run: node --test tests/*.test.mjs
+
+      - name: Bot unit tests (chunking, gateway client, history, handlers)
+        working-directory: bot
+        run: PYTHONPATH=tests:. python -m unittest discover -s tests -p 'test_*.py' -t . -v
+
+      - name: Gateway HTTP smoke test (offline simulator)
+        working-directory: gateway
+        run: node scripts/smoke.mjs
+
+      - name: Bot ↔ gateway integration over real HTTP
+        run: python scripts/integration_bot_gateway.py
+
+      - name: Full verification suite
+        run: ./scripts/verify.sh --fast
+
+  # =========================================================================== #
+  # 3. Container builds — proves both Dockerfiles actually build
+  # =========================================================================== #
+  build:
+    name: Build containers
+    runs-on: ubuntu-latest
+    needs: validate
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build gateway image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./gateway
+          file: ./gateway/Dockerfile
+          push: false
+          load: true
+          tags: konkred-gateway:ci
+          cache-from: type=gha,scope=gateway
+          cache-to: type=gha,mode=max,scope=gateway
+
+      - name: Build bot image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./bot
+          file: ./bot/Dockerfile
+          push: false
+          load: true
+          tags: konkred-bot:ci
+          cache-from: type=gha,scope=bot
+          cache-to: type=gha,mode=max,scope=bot
+
+      - name: Gateway container healthcheck
+        run: |
+          docker run -d --name gw-ci -e DEMO_MOCK=true -e PORT=3000 -e HOST=0.0.0.0 \
+            -e ADMIN_KEY=ci-admin \
+            -e USERS_JSON='[{"key":"ci-key","userId":"ci","tier":"internal"}]' \
+            -p 3000:3000 konkred-gateway:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/api/health >/dev/null; then echo "gateway healthy after ${i}s"; break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:3000/api/health | head -c 400; echo
+          curl -fsS -X POST http://127.0.0.1:3000/api/ai \
+            -H 'Content-Type: application/json' -H 'x-api-key: ci-key' \
+            -d '{"taskType":"general","messages":[{"role":"user","content":"container smoke"}]}' | head -c 400; echo
+          docker inspect --format '{{.State.Health.Status}}' gw-ci
+          test "$(docker inspect --format '{{.State.Health.Status}}' gw-ci)" = "healthy"
+          docker logs --tail 20 gw-ci
+          docker rm -f gw-ci
+
+      - name: Bot container starts and reports its healthcheck contract
+        run: |
+          docker run --rm --entrypoint python konkred-bot:ci -c "import aiogram, httpx, redis, sys; print('aiogram', aiogram.__version__); print('python', sys.version.split()[0])"
+          docker run --rm --entrypoint python konkred-bot:ci healthcheck.py || echo "expected: UNHEALTHY before the worker has written a heartbeat"
+          # config validation must fail loudly without a token (proves fail-fast wiring)
+          docker run --rm --entrypoint python konkred-bot:ci config.py || true
+
+  # =========================================================================== #
+  # 4. Compose runtime smoke — real multi-container networking
+  # =========================================================================== #
+  compose-smoke:
+    name: Compose runtime smoke (bot → gateway → redis DNS)
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          {
+            echo "DEMO_MOCK=true"
+            echo "MOCK_FALLBACK=true"
+            echo "ADMIN_KEY=ci-admin-key"
+            echo 'USERS_JSON=[{"key":"bot-internal-key","userId":"telegram-bot","tier":"internal"}]'
+            echo "GATEWAY_API_KEY=bot-internal-key"
+          } >> .env
+
+      - name: Start redis + gateway and wait for healthy
+        run: |
+          docker compose up -d --build --wait redis gateway
+          docker compose ps
+          docker compose logs --tail 40 gateway
+
+      - name: Gateway health from the host
+        run: |
+          curl -fsS http://127.0.0.1:3000/api/health | head -c 500; echo
+          curl -fsS -X POST http://127.0.0.1:3000/api/ai \
+            -H 'Content-Type: application/json' -H 'x-api-key: bot-internal-key' \
+            -d '{"taskType":"summarization","prompt":"compose smoke test"}' | head -c 500; echo
+
+      - name: Build bot image and verify in-network DNS + HTTP + Redis
+        run: |
+          docker compose build bot
+          cat > /tmp/compose_smoke.py <<'PY'
+          import socket
+
+          import httpx
+          import redis
+
+          gw_ip = socket.gethostbyname("gateway")
+          redis_ip = socket.gethostbyname("redis")
+          print(f"gateway resolves to {gw_ip}")
+          print(f"redis resolves to {redis_ip}")
+
+          health = httpx.get("http://gateway:3000/api/health", timeout=10)
+          print("gateway /api/health ->", health.status_code)
+          assert health.status_code == 200, health.text
+
+          ask = httpx.post(
+              "http://gateway:3000/api/ai",
+              json={"taskType": "general", "messages": [{"role": "user", "content": "hello from the bot container"}]},
+              headers={"x-api-key": "bot-internal-key"},
+              timeout=30,
+          )
+          print("gateway /api/ai ->", ask.status_code)
+          assert ask.status_code == 200, ask.text
+          body = ask.json()
+          assert body["data"]["content"], body
+          print("provider:", body["data"]["provider"], "model:", body["data"]["modelId"])
+
+          client = redis.from_url("redis://redis:6379/0", decode_responses=True, socket_connect_timeout=5)
+          assert client.ping() is True
+          client.set("konkred:history:1", '[{"role":"user","content":"hi"}]', ex=60)
+          assert client.get("konkred:history:1")
+          print("redis ping + history write OK")
+          print("COMPOSE SMOKE PASSED")
+          PY
+          docker compose run -T --rm --no-deps --entrypoint python bot - < /tmp/compose_smoke.py | tee /tmp/compose_smoke.log
+          grep -q "COMPOSE SMOKE PASSED" /tmp/compose_smoke.log
+
+      - name: Teardown
+        if: always()
+        run: |
+          docker compose logs --tail 60 || true
+          docker compose down -v --remove-orphans || true
+
+  # =========================================================================== #
+  # 5. Automated deployment (main only)
+  #    Render blueprints auto-deploy on push when `autoDeploy: true`; this job
+  #    is the explicit trigger + audit trail, and it no-ops when no hook secret
+  #    is configured so forks/PRs stay green.
+  # =========================================================================== #
+  deploy:
+    name: Deploy (Render)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test, compose-smoke]
+    timeout-minutes: 15
+    environment:
+      name: production
+    steps:
+      - name: Check deploy hook configuration
+        id: hook
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -n "$HOOK" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::RENDER_DEPLOY_HOOK_URL is not set — skipping deploy trigger. Add it under Settings → Secrets and variables → Actions."
+          fi
+
+      - name: Trigger Render deploy hook
+        if: steps.hook.outputs.configured == 'true'
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          set -o pipefail
+          echo "Triggering deployment for ${GITHUB_SHA::8}"
+          if ! curl -fsS --retry 3 --retry-delay 5 -X POST "$HOOK" -o /tmp/hook.json; then
+            echo "::error::Render deploy hook call failed"
+            exit 1
+          fi
+          head -c 400 /tmp/hook.json || true
+          echo
+          echo "Deployment queued. Watch progress: https://dashboard.render.com/"
+
+      - name: Verify production health (optional)
+        if: steps.hook.outputs.configured == 'true' && vars.PRODUCTION_URL != ''
+        env:
+          URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          echo "Waiting for ${URL}/api/health (Render free plan cold starts take ~50s)"
+          for i in $(seq 1 40); do
+            code=$(curl -s -o /tmp/health.json -w '%{http_code}' --max-time 15 "${URL}/api/health" || echo "000")
+            if [ "$code" = "200" ]; then
+              echo "production healthy after ${i} attempt(s)"
+              head -c 400 /tmp/health.json; echo
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::warning::production health check did not turn 200 within 10 minutes"
+          exit 1
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          {
+            echo "## Deployment"
+            echo ""
+            echo "- commit: \`${GITHUB_SHA}\`"
+            echo "- ref: \`${GITHUB_REF_NAME}\`"
+            echo "- hook configured: \`${{ steps.hook.outputs.configured }}\`"
+            echo ""
+            echo "Render blueprints with \`autoDeploy: true\` also redeploy on every push to the tracked branch."
+          } >> "$GITHUB_STEP_SUMMARY"

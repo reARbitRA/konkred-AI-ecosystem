@@ -1,0 +1,119 @@
+# =============================================================================
+# Render Blueprint — 1-click deploy for the Konkred AI ecosystem.
+#
+#   https://dashboard.render.com/blueprints/new → "Apply from Git repo"
+#   (or push to a repo and click "New +" → "Blueprint")
+#
+# Two services are created:
+#   1. konkred-gateway — public Docker web service (Node 20 ESM proxy, /api/health)
+#   2. konkred-bot     — Docker background worker (Aiogram long polling, no ports)
+#
+# Redis: Render's managed Key Value Store is a paid add-on, so the blueprint
+# leaves REDIS_URL as a `sync: false` variable for you to paste a free Upstash
+# endpoint into (rediss://…upstash.io:6379). See DEPLOYMENT.md §3 for the exact
+# steps — the bot speaks the standard RESP protocol, so any hosted Redis works.
+#
+# Cost model: the gateway runs on Render's free web plan (spins down when idle;
+# the bot's cold-start handling in gateway_client.wait_until_ready covers the
+# wake-up). Background workers require a paid plan — for a fully free 24/7
+# deployment use the Oracle Always-Free VM or Koyeb path in DEPLOYMENT.md.
+# =============================================================================
+services:
+  # --------------------------------------------------------------------------- #
+  # Gateway (public HTTP API)
+  # --------------------------------------------------------------------------- #
+  - type: web
+    name: konkred-gateway
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./gateway/Dockerfile
+    dockerContext: ./gateway
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Render injects PORT automatically; the gateway binds 0.0.0.0:$PORT.
+      - key: HOST
+        value: 0.0.0.0
+      - key: DEMO_MOCK
+        value: "false"
+      - key: MOCK_FALLBACK
+        value: "true"
+      - key: CACHE_ENABLED
+        value: "true"
+      - key: WATCHDOG_ENABLED
+        value: "true"
+      - key: DASHBOARD_ENABLED
+        value: "true"
+      # Secrets — generated once by Render, or overridden in the dashboard.
+      - key: ADMIN_KEY
+        generateValue: true
+      - key: USERS_JSON
+        sync: false # e.g. [{"key":"bot-internal-key","userId":"telegram-bot","tier":"internal"}]
+      # Provider credentials (leave blank to disable that provider).
+      - key: GEMINI_KEY_P1
+        sync: false
+      - key: GEMINI_KEY_P2
+        sync: false
+      - key: GEMINI_KEY_P3
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: CEREBRAS_API_KEY
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: CF_ACCOUNT_ID
+        sync: false
+      - key: CF_API_TOKEN
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+
+  # --------------------------------------------------------------------------- #
+  # Telegram bot (background worker — outbound long polling only)
+  # --------------------------------------------------------------------------- #
+  - type: worker
+    name: konkred-bot
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerfilePath: ./bot/Dockerfile
+    dockerContext: ./bot
+    autoDeploy: true
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: GATEWAY_API_KEY
+        sync: false # must match a "key" inside the gateway's USERS_JSON
+      # Point this at the gateway's public URL + /api/ai, e.g.
+      #   https://konkred-gateway.onrender.com/api/ai
+      # A bare origin also works: the client appends /api/ai automatically.
+      - key: GATEWAY_URL
+        sync: false
+      - key: GATEWAY_HEALTH_URL
+        sync: false # e.g. https://konkred-gateway.onrender.com/api/health
+      # Free hosted Redis (Upstash) — TLS endpoint, e.g.
+      #   rediss://default:<password>@<host>.upstash.io:6379
+      - key: REDIS_URL
+        sync: false
+      - key: LOG_LEVEL
+        value: INFO
+      - key: PARSE_MODE
+        value: Markdown
+      - key: CHUNK_SIZE
+        value: "3900"
+      - key: HISTORY_MAX_TURNS
+        value: "10"
+      - key: GATEWAY_MAX_RETRIES
+        value: "3"
+      - key: STARTUP_WAIT_TIMEOUT
+        value: "300" # free-plan gateway cold starts can take ~50s
+      - key: HEARTBEAT_PATH
+        value: /tmp/konkred-bot-heartbeat
+      - key: ALLOWED_USER_IDS
+        sync: false # optional: comma separated Telegram user IDs

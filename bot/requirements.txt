@@ -1,0 +1,10 @@
+# Konkred Telegram bot — Python 3.11
+# Pinned to exact versions so image builds are reproducible.
+#
+# NOTE on standard-library safety: none of the local modules in this directory
+# (config.py, history.py, chunking.py, keyboards.py, handlers.py, main.py,
+# healthcheck.py) shadow a CPython stdlib module or a transitive dependency of
+# aiogram / httpx / redis — verified by `scripts/check_python_imports.py`.
+aiogram==3.15.0
+httpx==0.28.1
+redis==5.2.1

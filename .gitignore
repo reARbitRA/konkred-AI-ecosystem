@@ -1,0 +1,47 @@
+# --- Secrets -------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# --- Node ----------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# --- Python --------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv*/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Runtime artefacts ---------------------------------------------------
+*.log
+logs/
+tmp/
+/tmp/
+heartbeat
+konkred-bot-heartbeat
+data/*.dump
+redis-data/
+
+# --- Editors / OS --------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- Docker --------------------------------------------------------------
+docker-compose.override.yml
