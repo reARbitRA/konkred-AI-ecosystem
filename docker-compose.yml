@@ -1,0 +1,122 @@
+services:
+  # ------------------------------------------------------------------ #
+  # State store
+  # ------------------------------------------------------------------ #
+  redis:
+    image: redis:7-alpine
+    container_name: konkred-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1", "--maxmemory", "${REDIS_MAXMEMORY:-256mb}", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis-data:/data
+    networks:
+      - internal-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ------------------------------------------------------------------ #
+  # Node 20 ESM quota-aware reverse proxy
+  # ------------------------------------------------------------------ #
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    image: konkred-gateway:local
+    container_name: konkred-gateway
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOST: 0.0.0.0
+      DEMO_MOCK: "${DEMO_MOCK:-false}"
+      MOCK_FALLBACK: "${MOCK_FALLBACK:-true}"
+      ADMIN_KEY: "${ADMIN_KEY:-}"
+      USERS_JSON: '${USERS_JSON:-[{"key":"bot-internal-key","userId":"telegram-bot","tier":"internal"}]}'
+      # Optional: external Redis for quota state on ephemeral hosts.
+      UPSTASH_REDIS_REST_URL: "${UPSTASH_REDIS_REST_URL:-}"
+      UPSTASH_REDIS_REST_TOKEN: "${UPSTASH_REDIS_REST_TOKEN:-}"
+    ports:
+      - "${GATEWAY_PORT:-3000}:3000"
+    networks:
+      - internal-net
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ------------------------------------------------------------------ #
+  # Python 3.11 Aiogram 3 worker
+  # ------------------------------------------------------------------ #
+  bot:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    image: konkred-bot:local
+    container_name: konkred-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
+      # Service-name DNS on the internal bridge network — reachable by name only
+      # from inside `internal-net`.
+      GATEWAY_URL: http://gateway:3000/api/ai
+      GATEWAY_HEALTH_URL: http://gateway:3000/api/health
+      GATEWAY_API_KEY: "${GATEWAY_API_KEY:-bot-internal-key}"
+      REDIS_URL: redis://redis:6379/0
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      PARSE_MODE: "${PARSE_MODE:-Markdown}"
+      HEARTBEAT_PATH: /tmp/konkred-bot-heartbeat
+    depends_on:
+      redis:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    networks:
+      - internal-net
+    healthcheck:
+      test: ["CMD", "python", "healthcheck.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+volumes:
+  redis-data:
+    driver: local
+
+networks:
+  internal-net:
+    name: konkred-internal-net
+    driver: bridge

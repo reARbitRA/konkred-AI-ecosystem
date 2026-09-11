@@ -1,0 +1,86 @@
+{
+  "registryBuiltAt": "2026-09-01T00:00:00Z",
+  "providers": {
+    "gemini": {
+      "name": "Google Generative Language",
+      "resetPolicy": "pt-midnight",
+      "trainsOnData": true,
+      "probe": { "kind": "gemini-generate" }
+    },
+    "groq": {
+      "name": "Groq Cloud",
+      "resetPolicy": "utc-midnight",
+      "trainsOnData": false,
+      "learnFromHeaders": {
+        "rpm": "x-ratelimit-limit-requests",
+        "tpm": "x-ratelimit-limit-tokens"
+      },
+      "probe": { "kind": "openai-chat" }
+    },
+    "cerebras": {
+      "name": "Cerebras Inference",
+      "resetPolicy": "utc-midnight",
+      "trainsOnData": false,
+      "learnFromHeaders": {
+        "rpm": "x-ratelimit-limit-requests-minute",
+        "tpm": "x-ratelimit-limit-tokens-minute"
+      },
+      "probe": { "kind": "openai-chat" }
+    },
+    "mistral": {
+      "name": "Mistral La Plateforme",
+      "resetPolicy": "utc-midnight",
+      "trainsOnData": true,
+      "probe": { "kind": "openai-chat" }
+    },
+    "openrouter": {
+      "name": "OpenRouter",
+      "resetPolicy": "utc-midnight",
+      "trainsOnData": false,
+      "probe": { "kind": "openrouter-keyinfo" }
+    },
+    "cloudflare": {
+      "name": "Cloudflare Workers AI",
+      "resetPolicy": "utc-midnight",
+      "trainsOnData": false,
+      "probe": { "kind": "none" }
+    },
+    "github": {
+      "name": "GitHub Models",
+      "resetPolicy": "utc-midnight",
+      "trainsOnData": false,
+      "probe": { "kind": "openai-chat" }
+    },
+    "mock": {
+      "name": "Offline Simulator",
+      "resetPolicy": "utc-midnight",
+      "trainsOnData": false,
+      "learnFromHeaders": {
+        "rpm": "x-ratelimit-limit-requests",
+        "tpm": "x-ratelimit-limit-tokens"
+      },
+      "probe": { "kind": "mock" }
+    }
+  },
+  "models": [
+    { "id": "gemini:flash", "providerId": "gemini", "modelName": "gemini-2.5-flash", "rpm": 15, "rpd": 1500, "tpm": 1000000, "tpd": null, "monthlyTokens": null, "contextWindow": 1048576, "quality": 4, "lastVerifiedAt": "2026-09-01", "confidence": "high" },
+    { "id": "gemini:flash-lite", "providerId": "gemini", "modelName": "gemini-2.5-flash-lite", "rpm": 30, "rpd": 1500, "tpm": 1000000, "tpd": null, "monthlyTokens": null, "contextWindow": 1048576, "quality": 3, "lastVerifiedAt": "2026-09-01", "confidence": "high" },
+    { "id": "groq:gpt-oss-120b", "providerId": "groq", "modelName": "openai/gpt-oss-120b", "rpm": 30, "rpd": 1000, "tpm": 8000, "tpd": 200000, "monthlyTokens": null, "contextWindow": 131072, "quality": 4, "lastVerifiedAt": "2026-09-01", "confidence": "high" },
+    { "id": "groq:llama-70b", "providerId": "groq", "modelName": "llama-3.3-70b-versatile", "rpm": 30, "rpd": 1000, "tpm": 12000, "tpd": 100000, "monthlyTokens": null, "contextWindow": 131072, "quality": 4, "lastVerifiedAt": "2026-09-01", "confidence": "high" },
+    { "id": "groq:llama-8b", "providerId": "groq", "modelName": "llama-3.1-8b-instant", "rpm": 30, "rpd": 14400, "tpm": 6000, "tpd": 500000, "monthlyTokens": null, "contextWindow": 131072, "quality": 2, "lastVerifiedAt": "2026-09-01", "confidence": "high" },
+    { "id": "groq:qwen3-32b", "providerId": "groq", "modelName": "qwen/qwen3-32b", "rpm": 60, "rpd": 1000, "tpm": 6000, "tpd": 500000, "monthlyTokens": null, "contextWindow": 131072, "quality": 3, "lastVerifiedAt": "2026-09-01", "confidence": "high" },
+    { "id": "groq:kimi-k2", "providerId": "groq", "modelName": "moonshotai/kimi-k2-instruct", "rpm": 60, "rpd": 1000, "tpm": 10000, "tpd": 300000, "monthlyTokens": null, "contextWindow": 131072, "quality": 4, "lastVerifiedAt": "2026-09-01", "confidence": "high" },
+    { "id": "groq:llama-4-scout", "providerId": "groq", "modelName": "meta-llama/llama-4-scout-17b-16e-instruct", "rpm": 30, "rpd": 1000, "tpm": 30000, "tpd": 500000, "monthlyTokens": null, "contextWindow": 131072, "quality": 3, "lastVerifiedAt": "2026-09-01", "confidence": "high" },
+    { "id": "cerebras:gpt-oss-120b", "providerId": "cerebras", "modelName": "gpt-oss-120b", "rpm": 30, "rpd": 10000, "tpm": 60000, "tpd": 1000000, "monthlyTokens": null, "contextWindow": 8192, "quality": 4, "lastVerifiedAt": "2026-09-01", "confidence": "high" },
+    { "id": "cerebras:llama-8b", "providerId": "cerebras", "modelName": "llama3.1-8b", "rpm": 30, "rpd": 10000, "tpm": 60000, "tpd": 1000000, "monthlyTokens": null, "contextWindow": 8192, "quality": 2, "lastVerifiedAt": "2026-09-01", "confidence": "high" },
+    { "id": "cerebras:qwen3-235b", "providerId": "cerebras", "modelName": "qwen-3-235b-a22b-instruct-2507", "rpm": 10, "rpd": 100, "tpm": 20000, "tpd": 500000, "monthlyTokens": null, "contextWindow": 65536, "quality": 5, "lastVerifiedAt": "2026-09-01", "confidence": "high" },
+    { "id": "mistral:small", "providerId": "mistral", "modelName": "mistral-small-latest", "rpm": 60, "rpd": null, "tpm": 50000, "tpd": null, "monthlyTokens": 4000000, "contextWindow": 128000, "quality": 3, "lastVerifiedAt": "2026-09-01", "confidence": "high" },
+    { "id": "mistral:codestral", "providerId": "mistral", "modelName": "codestral-latest", "rpm": 60, "rpd": null, "tpm": 40000, "tpd": null, "monthlyTokens": 2000000, "contextWindow": 256000, "quality": 4, "lastVerifiedAt": "2026-09-01", "confidence": "high" },
+    { "id": "openrouter:free-auto", "providerId": "openrouter", "modelName": "openrouter/auto", "rpm": 20, "rpd": 50, "tpm": null, "tpd": null, "monthlyTokens": null, "contextWindow": 32768, "quality": 3, "lastVerifiedAt": "2026-09-01", "confidence": "high" },
+    { "id": "cloudflare:llama-8b", "providerId": "cloudflare", "modelName": "@cf/meta/llama-3.1-8b-instruct", "rpm": 300, "rpd": 400, "tpm": 100000, "tpd": null, "monthlyTokens": null, "contextWindow": 8192, "quality": 2, "lastVerifiedAt": "2026-09-01", "confidence": "high" },
+    { "id": "github:gpt-4o", "providerId": "github", "modelName": "gpt-4o", "rpm": 10, "rpd": 50, "tpm": 8000, "tpd": null, "monthlyTokens": null, "contextWindow": 128000, "quality": 5, "lastVerifiedAt": "2026-09-01", "confidence": "high" },
+    { "id": "github:gpt-4o-mini", "providerId": "github", "modelName": "gpt-4o-mini", "rpm": 15, "rpd": 150, "tpm": 10000, "tpd": null, "monthlyTokens": null, "contextWindow": 128000, "quality": 3, "lastVerifiedAt": "2026-09-01", "confidence": "high" },
+    { "id": "mock:atlas-70b", "providerId": "mock", "modelName": "atlas-70b-mock", "rpm": 100, "rpd": 10000, "tpm": 500000, "tpd": 5000000, "monthlyTokens": null, "contextWindow": 131072, "quality": 4, "lastVerifiedAt": "2026-09-01", "confidence": "n/a" },
+    { "id": "mock:sparrow-8b", "providerId": "mock", "modelName": "sparrow-8b-mock", "rpm": 100, "rpd": 10000, "tpm": 500000, "tpd": 5000000, "monthlyTokens": null, "contextWindow": 131072, "quality": 2, "lastVerifiedAt": "2026-09-01", "confidence": "n/a" }
+  ]
+}
