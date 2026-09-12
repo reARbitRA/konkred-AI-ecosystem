@@ -114,8 +114,7 @@ fi
 # --------------------------------------------------------------------------- #
 step "7. Bot unit tests (unittest)"
 if $PY -c "import aiogram, httpx, redis" >/dev/null 2>&1; then
-  if (cd bot && PYTHONPATH=tests:. ../$PY -m unittest discover -s tests -p 'test_*.py' -t . > /tmp/konkred-bot-tests.log 2>&1); then
-    ok "bot tests: $(tail -3 /tmp/konkred-bot-tests.log | tr '\n' ' ')"
+  if (cd bot && PYTHONPATH=tests:. "$PY" -m unittest discover -s tests -p 'test_*.py' -t . > /tmp/konkred-bot-tests.log 2>&1); then    ok "bot tests: $(tail -3 /tmp/konkred-bot-tests.log | tr '\n' ' ')"
   else
     bad "bot tests failed (see /tmp/konkred-bot-tests.log)"; tail -40 /tmp/konkred-bot-tests.log
   fi
