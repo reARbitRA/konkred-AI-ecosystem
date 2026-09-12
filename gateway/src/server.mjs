@@ -20,6 +20,13 @@ import { userLimiter } from './gateway/user-limiter.mjs';
 import { runInference, validateRequest, gatewayStats, GatewayError } from './gateway/gateway.mjs';
 import { startWatchdog, stopWatchdog, watchdogStatus } from './watchdog.mjs';
 import { renderDashboard } from './dashboard.mjs';
+import {
+  handleCors,
+  handleFullkonkProviders,
+  handleFullkonkGenerate,
+  handleFullkonkExport,
+} from './fullkonk.mjs';
+import { handleOpenAiChat, handleOpenAiModels } from './openai-shim.mjs';
 import { log, readJsonBody, sendJson, sendHtml, safeEqual, randomId, parseApiKey } from './util.mjs';
 
 const startedAt = Date.now();
@@ -140,6 +147,13 @@ const routes = [
   { method: 'GET', path: '/api/status', handler: handleStatus },
   { method: 'POST', path: '/api/ai', handler: handleAi },
   { method: 'POST', path: '/api/admin/cache/flush', handler: handleFlushCache },
+  /* fullKONK_> brain adapter (konkred.xyz/fullkonk) */
+  { method: 'GET', path: '/api/fullkonk/providers', handler: handleFullkonkProviders },
+  { method: 'POST', path: '/api/fullkonk/generate', handler: handleFullkonkGenerate },
+  { method: 'POST', path: '/api/fullkonk/github/export', handler: handleFullkonkExport },
+  /* OpenAI-compatible edge — point any OpenAI-speaking tool at this gateway */
+  { method: 'POST', path: '/v1/chat/completions', handler: handleOpenAiChat },
+  { method: 'GET', path: '/v1/models', handler: handleOpenAiModels },
 ];
 
 const server = http.createServer((req, res) => {
@@ -148,6 +162,7 @@ const server = http.createServer((req, res) => {
   const pathname = url.pathname.replace(/\/+$/, '') || '/';
 
   res.setHeader('X-Request-Id', randomId());
+  if (handleCors(req, res)) return;
 
   const route = routes.find((r) => r.path === pathname);
   if (!route) {
