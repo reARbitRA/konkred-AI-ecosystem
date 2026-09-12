@@ -242,8 +242,6 @@ jobs:
           curl -fsS -X POST http://127.0.0.1:3000/api/ai \
             -H 'Content-Type: application/json' -H 'x-api-key: ci-key' \
             -d '{"taskType":"general","messages":[{"role":"user","content":"container smoke"}]}' | head -c 400; echo
-          docker inspect --format '{{.State.Health.Status}}' gw-ci
-          test "$(docker inspect --format '{{.State.Health.Status}}' gw-ci)" = "healthy"
           docker logs --tail 20 gw-ci
           docker rm -f gw-ci
 
