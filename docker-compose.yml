@@ -42,7 +42,7 @@ services:
       DEMO_MOCK: "${DEMO_MOCK:-false}"
       MOCK_FALLBACK: "${MOCK_FALLBACK:-true}"
       ADMIN_KEY: "${ADMIN_KEY:-}"
-      USERS_JSON: '${USERS_JSON:-[{"key":"bot-internal-key","userId":"telegram-bot","tier":"internal"}]}'
+            USERS_JSON: ${USERS_JSON:?USERS_JSON must be set in .env - copy .env.example to .env}
       # Optional: external Redis for quota state on ephemeral hosts.
       UPSTASH_REDIS_REST_URL: "${UPSTASH_REDIS_REST_URL:-}"
       UPSTASH_REDIS_REST_TOKEN: "${UPSTASH_REDIS_REST_TOKEN:-}"
