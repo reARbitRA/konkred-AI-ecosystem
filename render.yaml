@@ -1,7 +1,7 @@
 # =============================================================================
 # Render Blueprint — 1-click deploy for the Konkred AI ecosystem.
 #
-#   https://dashboard.render.com/blueprints/new → "Apply from Git repo"
+#   https://dashboard.render.com/blueprint/new → "Apply from Git repo"
 #   (or push to a repo and click "New +" → "Blueprint")
 #
 # Two services are created:
@@ -50,6 +50,10 @@ services:
       # Secrets — generated once by Render, or overridden in the dashboard.
       - key: ADMIN_KEY
         generateValue: true
+      # Shared secret the konkred.xyz edge proxy presents via x-brain-key.
+      # Paste the SAME value into Vercel as BRAIN_KEY (see DEPLOYMENT.md §8).
+      - key: FULLKONK_KEY
+        sync: false
       - key: USERS_JSON
         sync: false # e.g. [{"key":"bot-internal-key","userId":"telegram-bot","tier":"internal"}]
       # Provider credentials (leave blank to disable that provider).
