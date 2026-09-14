@@ -58,7 +58,7 @@ Other entry points:
 ```
 
 Then open Telegram, message your bot, send `/start`, pick a task and ask a question.
-Every reply is footered with the provider/model that actually served it.
+By default, every successful reply is footered with the provider/model that actually served it; set `SHOW_PROVIDER_FOOTER=false` only when deliberately disabling this presentation detail.
 
 ---
 
@@ -164,6 +164,8 @@ Telegram accounts (empty = open to everyone).
 ├── render.yaml                 # 1-click Render blueprint (web + worker)
 ├── setup.sh                    # idempotent bootstrap/validate/build/start
 ├── ci/deploy.yml               # CI/CD pipeline (install with ./scripts/install-workflow.sh)
+├── LICENSE                     # MIT license
+├── .github/workflows/deploy.yml # active workflow copied from ci/deploy.yml
 ├── scripts/install-workflow.sh # copies ci/deploy.yml → .github/workflows/
 ├── scripts/
 │   ├── verify.sh               # the whole suite, locally or in CI
@@ -171,6 +173,7 @@ Telegram accounts (empty = open to everyone).
 │   ├── validate_env.py         # .env.example ↔ code agreement
 │   ├── check_python_imports.py # stdlib/package shadowing audit
 │   └── integration_bot_gateway.py  # real bot client ↔ real gateway
+├── Makefile
 ├── gateway/
 │   ├── Dockerfile  package.json
 │   ├── data/policies.registry.json
@@ -178,7 +181,7 @@ Telegram accounts (empty = open to everyone).
 │   ├── tests/gateway.test.mjs
 │   └── src/
 │       ├── server.mjs  config.mjs  util.mjs  policy-store.mjs
-│       ├── watchdog.mjs  dashboard.mjs
+│       ├── watchdog.mjs  dashboard.mjs  fullkonk.mjs  openai-shim.mjs
 │       ├── providers/{base,openai-compat,gemini,cloudflare,mock,index}.mjs
 │       └── gateway/{gateway,router,key-pool,user-limiter,fallback,cache,dedup,fusion}.mjs
 ├── bot/
@@ -198,7 +201,7 @@ Telegram accounts (empty = open to everyone).
 ./scripts/verify.sh                    # everything (skips what your machine lacks)
 cd gateway && node --test tests/*.test.mjs   # 31 gateway tests
 cd gateway && node scripts/smoke.mjs         # 21 HTTP smoke checks
-cd bot && PYTHONPATH=tests:. python -m unittest discover -s tests -p 'test_*.py' -t .   # 85 bot tests
+cd bot && PYTHONPATH=tests:. python -m unittest discover -s tests -p 'test_*.py' -t .   # 88 bot tests
 python scripts/integration_bot_gateway.py    # 8 end-to-end checks
 ```
 

@@ -64,20 +64,36 @@ export const rankCandidates = ({
 
   candidates.sort((a, b) => a.score - b.score || a.model.id.localeCompare(b.model.id));
 
-  // Prefer distinct providers at the top of the list so one saturated vendor
-  // cannot burn every attempt slot.
-  const interleaved = [];
-  const seenProviders = new Set();
-  const rest = [];
-  for (const c of candidates) {
-    if (!seenProviders.has(c.model.providerId) && !rest.length) {
-      seenProviders.add(c.model.providerId);
-      interleaved.push(c);
-    } else {
-      rest.push(c);
+  // True provider-group round robin: preserve score order within each provider,
+  // but do not let a provider with many models consume every early attempt slot.
+  const groups = new Map();
+  for (const candidate of candidates) {
+    const group = groups.get(candidate.model.providerId) ?? [];
+    group.push(candidate);
+    groups.set(candidate.model.providerId, group);
+  }
+  const ordered = [];
+  const queues = [...groups.values()];
+  // An explicit caller preference is stronger than fairness for the first slot.
+  if (preferredModel) {
+    for (const queue of queues) {
+      const index = queue.findIndex((c) => c.model.id === preferredModel || c.model.modelName === preferredModel);
+      if (index >= 0) {
+        ordered.push(queue.splice(index, 1)[0]);
+        break;
+      }
     }
   }
-  const ordered = [...interleaved, ...rest];
+  for (let index = 0; ; index += 1) {
+    let added = false;
+    for (const queue of queues) {
+      if (queue[index]) {
+        ordered.push(queue[index]);
+        added = true;
+      }
+    }
+    if (!added) break;
+  }
 
   // Collapse duplicate (model,key) pairs, then cap the attempt count.
   const unique = [];
