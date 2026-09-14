@@ -33,6 +33,7 @@ class KeyState {
     // Health
     this.cooldownUntil = 0;
     this.disabled = false;
+    this.disabledUntil = 0;
     this.disabledReason = null;
     this.stats = { attempts: 0, successes: 0, rateLimits: 0, errors: 0, tokens: 0, lastUsedAt: null, lastError: null };
   }
@@ -201,9 +202,12 @@ class KeyPool {
     keyState.stats.lastError = { at: new Date(now).toISOString(), errorClass, message: String(message).slice(0, 240) };
 
     if (errorClass === 'AUTH') {
-      keyState.cooldownUntil = now + config.cooldownAfterAuthFailureMs;
+      keyState.disabled = true;
+      keyState.disabledUntil = now + config.cooldownAfterAuthFailureMs;
+      keyState.cooldownUntil = keyState.disabledUntil;
+      keyState.disabledReason = 'AUTH';
       keyState.stats.rateLimits += 0;
-      log.warn('key-pool', `${keyState.label} auth failure — cooling for ${Math.round(config.cooldownAfterAuthFailureMs / 60000)}m`);
+      log.warn('key-pool', `${keyState.label} auth failure — disabled for ${Math.round(config.cooldownAfterAuthFailureMs / 60000)}m`);
       return;
     }
     if (errorClass === 'RATE_LIMIT') keyState.stats.rateLimits += 1;
@@ -264,6 +268,12 @@ class KeyPool {
     for (const states of this.#keys.values()) {
       for (const k of states) {
         this.#prune(k, now);
+        if (k.disabled && k.disabledUntil && k.disabledUntil <= now) {
+          k.disabled = false;
+          k.disabledUntil = 0;
+          k.disabledReason = null;
+          pruned += 1;
+        }
         if (k.cooldownUntil && k.cooldownUntil <= now && !k.disabled) {
           k.cooldownUntil = 0;
           pruned += 1;
