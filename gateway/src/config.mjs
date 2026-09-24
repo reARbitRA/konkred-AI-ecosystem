@@ -146,6 +146,8 @@ export const config = Object.freeze({
   watchdogIntervalMs: int('WATCHDOG_INTERVAL_MS', 60000),
   watchdogEnabled: bool('WATCHDOG_ENABLED', true),
   dashboardEnabled: bool('DASHBOARD_ENABLED', true),
+  corsAllowAll: bool('CORS_ALLOW_ALL', false),
+  corsOrigins: toList(raw('CORS_ALLOW_ORIGINS', '')),
 });
 
 /** Names of providers that currently have usable credentials. */

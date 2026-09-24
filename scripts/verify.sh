@@ -38,7 +38,7 @@ warn() { printf '%s  WARN%s %s\n' "$YELLOW" "$NC" "$*"; WARN=$((WARN+1)); }
 
 # Interpreter selection: prefer a project venv when present (it has bot deps).
 PY=python3
-if [[ -x ".venv-bot/bin/python" ]]; then PY=".venv-bot/bin/python"; fi
+if [[ -x ".venv-bot/bin/python" ]]; then PY="$(pwd)/.venv-bot/bin/python"; fi
 if [[ -n "${PYTHON:-}" ]]; then PY="$PYTHON"; fi
 
 run() { # run <label> <cmd...>
