@@ -1,211 +1,81 @@
 <div align="center">
 
-# KONKRED AI ECOSYSTEM
-### controlled enterprise AI workflow hardware · zero-cost by design
+# KONKRED / CONTROL RAIL
 
-[![PIPELINE](https://img.shields.io/badge/PIPELINE-ACTIVE-d60019?style=for-the-badge&logo=githubactions&logoColor=f4f1eb&labelColor=0a0908)](ci/deploy.yml)
-[![DOCKER](https://img.shields.io/badge/DOCKER-READY-171514?style=for-the-badge&logo=docker&logoColor=d60019&labelColor=0a0908)](docker-compose.yml)
-[![LICENSE](https://img.shields.io/badge/LICENSE-MIT-171514?style=for-the-badge&labelColor=0a0908&color=f4f1eb)](LICENSE)
-[![NODE](https://img.shields.io/badge/NODE.JS-20-171514?style=for-the-badge&logo=nodedotjs&logoColor=f4f1eb&labelColor=0a0908)](gateway/)
-[![PYTHON](https://img.shields.io/badge/PYTHON-3.11-171514?style=for-the-badge&logo=python&logoColor=f4f1eb&labelColor=0a0908)](bot/)
-[![REDIS](https://img.shields.io/badge/REDIS-7-171514?style=for-the-badge&logo=redis&logoColor=f4f1eb&labelColor=0a0908)](docker-compose.yml)
-[![RENDER](https://img.shields.io/badge/RENDER-1--CLICK-171514?style=for-the-badge&logo=render&logoColor=d60019&labelColor=0a0908)](render.yaml)
+### Resilient multi-provider AI infrastructure for Telegram and HTTP
 
-```
-ONE ENDPOINT · SEVEN FREE-TIER PROVIDERS · ZERO DOLLARS
-```
+[![CI](https://img.shields.io/badge/CI-VERIFIED%20IN%20REPO-d60019?style=for-the-badge&labelColor=0a0908)](ci/deploy.yml)
+[![Node](https://img.shields.io/badge/NODE-20-171514?style=for-the-badge&labelColor=0a0908)](gateway/)
+[![Python](https://img.shields.io/badge/PYTHON-3.11-171514?style=for-the-badge&labelColor=0a0908)](bot/)
+[![License](https://img.shields.io/badge/LICENSE-MIT-f4f1eb?style=for-the-badge&labelColor=0a0908)](LICENSE)
 
-**Pool Gemini · Groq · Cerebras · Mistral · OpenRouter · Cloudflare Workers AI · GitHub Models**  
-behind one OpenAI-compatible rail — quota routing · automatic fallback · response cache · in-flight dedup.
+**One controlled API rail over multiple providers.** Quota-aware ranking, fallback, response cache, in-flight deduplication, Redis memory, and Telegram delivery.
 
 </div>
 
-```
-▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
-```
+![KONKRED control rail](assets/readme/hero.svg)
 
-## 0 · MANIFEST
+> [!IMPORTANT]
+> The registry currently contains **8 providers including the offline `mock` simulator and 19 models**. Availability depends on configured credentials and upstream limits; the gateway reports live capacity through its health surfaces.
 
-| | |
-|---|---|
-| **WHAT** | Production multi-container AI stack |
-| **COST MODEL** | Zero-cost-by-design (free-tier providers + free host path) |
-| **SURFACE** | Telegram bot → Gateway → LLM pool |
-| **TONE** | Industrial · terse · honest |
-| **RED MEANS** | Signal / live / power — not error |
-| **RULE** | Background never glows. Only foreground objects ignite. |
+## System map
 
-```
-▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
-```
+KONKRED is three runtime services: `bot` receives Telegram updates and owns the conversation UX; `gateway` exposes the controlled inference rail; `redis` stores conversation history and Aiogram FSM state. Provider adapters normalize upstream APIs behind the gateway policy engine.
 
-## I · HARDWARE BENCH TOPOLOGY
+![Docker topology](assets/readme/docker-topology.svg)
 
-```mermaid
-graph LR
-    subgraph INTAKE["[ INTAKE ]"]
-        TG["TELEGRAM<br/>long polling"]
-    end
+| Service | Runtime | Responsibility |
+|---|---|---|
+| `bot` | Python 3.11, Aiogram, httpx, redis | multi-turn handlers, FSM, retries, chunked Telegram replies |
+| `gateway` | Node.js 20 ESM, zero runtime dependencies | auth, routing, quotas, fallback, cache, dedup, health |
+| `redis` | Redis 7 with AOF | history and FSM state; Compose internal DNS service |
 
-    subgraph FLOOR["[ FACTORY FLOOR · DOCKER COMPOSE ]"]
-        BOT["BOT<br/>Python 3.11 · Aiogram 3.15<br/>multi-turn · chunking · FSM"]
-        GW["GATEWAY<br/>Node.js 20 ESM<br/>zero runtime deps"]
-        RD["REDIS 7<br/>AOF · history + FSM"]
-    end
+![Request lifecycle](assets/readme/request-lifecycle.svg)
 
-    subgraph POOL["[ FREE-TIER COMPUTE ]"]
-        P1["Gemini"]
-        P2["Groq"]
-        P3["Cerebras"]
-        P4["Mistral"]
-        P5["OpenRouter"]
-        P6["Cloudflare"]
-        P7["GitHub Models"]
-    end
+## Provider registry
 
-    TG -->|"messages"| BOT
-    BOT -->|"x-api-key"| GW
-    BOT <-->|"RESP"| RD
-    GW -->|"quota-aware routing"| P1 & P2 & P3 & P4 & P5 & P6 & P7
+The source of truth is [`gateway/data/policies.registry.json`](gateway/data/policies.registry.json). It defines provider reset policies, privacy metadata, optional learned rate-limit headers, model limits, context windows, quality, and verification dates. The adapters currently cover:
 
-    style INTAKE fill:#0a0908,stroke:#2a2624,stroke-width:1.5px,color:#7a756d
-    style FLOOR fill:#0a0908,stroke:#2a2624,stroke-width:1.5px,color:#7a756d
-    style POOL fill:#0a0908,stroke:#2a2624,stroke-width:1.5px,color:#7a756d
-    style TG fill:#171514,stroke:#2a2624,color:#f4f1eb
-    style BOT fill:#171514,stroke:#2a2624,color:#f4f1eb
-    style GW fill:#171514,stroke:#d60019,stroke-width:2px,color:#f4f1eb
-    style RD fill:#171514,stroke:#2a2624,color:#f4f1eb
-    style P1 fill:#171514,stroke:#2a2624,color:#f4f1eb
-    style P2 fill:#171514,stroke:#2a2624,color:#f4f1eb
-    style P3 fill:#171514,stroke:#2a2624,color:#f4f1eb
-    style P4 fill:#171514,stroke:#2a2624,color:#f4f1eb
-    style P5 fill:#171514,stroke:#2a2624,color:#f4f1eb
-    style P6 fill:#171514,stroke:#2a2624,color:#f4f1eb
-    style P7 fill:#171514,stroke:#2a2624,color:#f4f1eb
-```
+![Provider rack](assets/readme/provider-rack.svg)
 
-### Service breakdown
+`gemini` · `groq` · `cerebras` · `mistral` · `openrouter` · `cloudflare` · `github` · `mock`
 
-| ID | Bench | Stack | Assignment |
-|:---:|:---|:---|:---|
-| `GW-01` | **gateway** | Node.js 20 · ESM · *zero runtime deps* | Quota-aware reverse proxy. Pools 7 free-tier LLM APIs behind one OpenAI-ish endpoint. Sliding-window limits, per-error-class fallback, response cache, in-flight dedup. |
-| `BOT-02` | **bot** | Python 3.11 · Aiogram 3.15 · httpx · redis | Telegram front-end. Multi-turn memory in Redis, task modes, non-blocking typing indicators, Telegram-safe 4096-char chunking, resilient gateway client. |
-| `RD-03` | **redis** | Redis 7 · AOF | Conversation history + Aiogram FSM storage. History keys expire after 24h. |
+The `mock` adapter is intentionally an offline simulator for smoke tests and local development. It is not an upstream availability claim.
 
-```
-▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
-```
+## Gateway contract
 
-## II · REQUEST LIFECYCLE
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor U as USER
-    participant TG as TELEGRAM
-    participant B as BOT
-    participant R as REDIS
-    participant G as GATEWAY
-    participant L as LLM POOL
-
-    U->>TG: message
-    TG->>B: long-poll update
-    B->>R: load history + FSM
-    R-->>B: state
-    B->>G: POST /api/ai (x-api-key)
-
-    rect rgb(23,21,20)
-        Note over G,L: ROUTING ENGINE
-        G->>G: cache + dedup check
-        G->>G: rank model × key × quality × privacy
-        G->>L: forward best candidate
-        L-->>G: 200 or classified error
-        G->>G: update sliding windows
-    end
-
-    G-->>B: ok + content + provider + model
-    B->>R: persist turn (24h TTL)
-    B->>TG: chunked reply ≤4096
-    TG-->>U: reply + provider footer stamp
-```
-
-```
-▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
-```
-
-## III · IGNITION · QUICKSTART
-
-### Local / VPS
-
-```bash
-git clone https://github.com/reARbitRA/konkred-AI-ecosystem.git
-cd konkred-AI-ecosystem
-
-./setup.sh                 # .env → validate → build → start → health-check
-nano .env                  # TELEGRAM_BOT_TOKEN + ≥1 provider key
-docker compose up -d
-docker compose logs -f bot
-```
-
-> [!TIP]
-> **No keys?** Offline simulator:
-> ```bash
-> ./setup.sh --mock
-> curl -s localhost:3000/api/health | jq .
-> ```
-
-<details>
-<summary><b>[ CLI MANIFOLD ]</b></summary>
-
-| Command | Function |
-|:---|:---|
-| `./setup.sh` | Full bootstrap |
-| `./setup.sh --mock` | Mock provider (no API keys) |
-| `./setup.sh --check` | Static validation only (no Docker) |
-| `./setup.sh --logs` | Tail all services |
-| `./setup.sh --down` | Stop (keeps Redis volume) |
-| `./scripts/verify.sh` | Full suite (same as CI) |
-
-</details>
-
-> [!NOTE]
-> Telegram → `/start` → pick task → ask.  
-> Replies stamp provider/model by default. Disable with `SHOW_PROVIDER_FOOTER=false`.
-
-```
-▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
-```
-
-## IV · GATEWAY API
-
-Unified envelope:
+All responses use a stable envelope:
 
 ```json
-{ "ok": true,  "data":  { } }
+{ "ok": true, "data": {} }
 { "ok": false, "error": { "code": "...", "message": "..." } }
 ```
 
-Rate-limits include `Retry-After` (bot honours it).
+![API console](assets/readme/api-console.svg)
 
-### Endpoint map
+| Method | Endpoint | Authentication | Purpose |
+|---|---|---|---|
+| `POST` | `/api/ai` | `x-api-key` | inference, ranking and fallback |
+| `GET` | `/api/health` | none | liveness and pool summary |
+| `GET` | `/api/ready` | none | readiness; `503` when all usable keys are cooling |
+| `GET` | `/api/models` | `x-api-key` | registry and current availability |
+| `GET` | `/api/status` | `x-admin-key` | deep pool, cache and caller status |
+| `POST` | `/api/admin/cache/flush` | `x-admin-key` | clear the bounded response cache |
+| `GET` | `/` | none | HTML operator dashboard |
 
-| Method | Path | Auth | Purpose |
-|:---:|:---|:---:|:---|
-| `POST` | `/api/ai` | `x-api-key` | Inference · quota-aware routing |
-| `GET` | `/api/health` | — | Liveness + pool summary |
-| `GET` | `/api/ready` | — | Readiness · `503` when all keys cooling |
-| `GET` | `/api/models` | `x-api-key` | Registry + availability |
-| `GET` | `/api/status` | `x-admin-key` | Deep status (pool, cache, callers) |
-| `POST` | `/api/admin/cache/flush` | `x-admin-key` | Flush response cache |
-| `GET` | `/` | — | HTML status dashboard |
+### Authentication headers
 
-<details>
-<summary><b>[ POST /api/ai · FULL SCHEMA ]</b></summary>
+- `x-api-key` identifies a configured caller from `USERS_JSON`.
+- `x-admin-key` protects deep status and cache administration.
+- Provider secrets stay server-side in environment variables; they are never forwarded to Telegram users.
+- The fullkonk streaming surface additionally recognizes `x-brain-key` / `FULLKONK_KEY` where enabled by the gateway.
+
+### `POST /api/ai`
 
 ```json
 {
   "taskType": "code-generation",
-  "messages": [{ "role": "user", "content": "Write a chunker in Python" }],
+  "messages": [{"role":"user","content":"Write a chunker in Python"}],
   "maxTokens": 2048,
   "temperature": 0.3,
   "privacy": "private",
@@ -214,262 +84,112 @@ Rate-limits include `Retry-After` (bot honours it).
 }
 ```
 
-| Field | Notes |
-|:---|:---|
-| `taskType` | `general` · `code-generation` · `bug-fixing` · `architecture` · `summarization` · `translate` · `extraction` |
-| `messages` | OpenAI-style `[{role, content}]` · bare `prompt` also accepted |
-| `privacy` | `private` → only providers that do **not** train on your data |
-| `model` | Optional preference · ranked first when capacity exists |
-| `maxTokens` | Response ceiling |
-| `temperature` | Sampling temperature |
-| `skipCache` | Bypass memory cache |
+`taskType` accepts `general`, `code-generation`, `bug-fixing`, `architecture`, `summarization`, `translate`, and `extraction`. `prompt` is accepted as a shorthand for one user message. The result includes `content`, `provider`, `model`, `modelId`, `usage`, `cached`, `deduplicated`, `attemptCount`, and `attempts[]`.
 
-**`data` returns:** `content`, `provider`, `model`, `modelId`, `usage`, `cached`, `attemptCount`, `attempts[]` (fallback trace).
+## Routing, quota and recovery
 
-</details>
+![Gateway core](assets/readme/gateway-core.svg)
 
-<details>
-<summary><b>[ ERROR CODES · STAMPED ]</b></summary>
+![Routing engine](assets/readme/routing-engine.svg)
 
-| Code | HTTP | Meaning |
-|:---|:---:|:---|
-| `MISSING_API_KEY` | 401 | No `x-api-key` |
-| `INVALID_API_KEY` | 403 | Key not in registry |
-| `UNKNOWN_TASK_TYPE` | 400 | Bad `taskType` |
-| `MISSING_MESSAGES` | 400 | No `messages` / `prompt` |
-| `USER_RPM` / `USER_RPD` / `USER_TPD` | 429 | Caller quota · + `Retry-After` |
-| `CAPACITY_EXHAUSTED` | 503 | All keys cooling |
-| `NO_PROVIDER_CREDENTIALS` | 503 | No upstream keys |
-| `PAYLOAD_TOO_LARGE` | 413 | Body too large |
+The router ranks registry models using task fit, requested privacy, model quality, key availability, quota headroom, and health. The key pool reserves estimated tokens before dispatch, commits actual usage after a response, and learns provider limits from declared headers when available.
 
-</details>
+![Quota ledger](assets/readme/quota-ledger.svg)
 
-```
-▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
-```
+Failures are classified rather than blindly retried. Rate limits (`429`) honor upstream `Retry-After` and cool the key; auth failures (`401`/`403`) disable that credential for the configured auth cooldown; provider faults (`408`, `5xx`) move to another viable candidate; context overflow can trigger one trimmed retry. The fallback trace is returned to the caller.
 
-## V · QUOTA-AWARE ROUTING ENGINE
+![Fallback sequence](assets/readme/fallback-sequence.svg)
 
-```mermaid
-flowchart TD
-    A["INCOMING REQUEST"] --> B{"CACHE HIT?"}
-    B -->|yes| C["RETURN CACHED · 0 quota"]
-    B -->|no| D{"DEDUP MATCH?"}
-    D -->|yes| E["COALESCE IN-FLIGHT"]
-    D -->|no| F["LOAD REGISTRY"]
-    F --> G["RANK model × key × quality × privacy"]
-    G --> H["FORWARD BEST"]
-    H --> I{"RESPONSE"}
-    I -->|200| J["CACHE + RETURN"]
-    I -->|429| K["COOL KEY → SAME_MODEL_NEXT_KEY"]
-    I -->|401| L["DISABLE 1h → NEXT_MODEL"]
-    I -->|context overflow| M["TRIM_CONTEXT · keep system + latest"]
-    I -->|5xx| N["BACKOFF"]
-    I -->|fatal| O["ABORT"]
-    K --> G
-    L --> G
-    M --> H
-    N --> G
+User rate limits (`USER_RPM`, `USER_RPD`, `USER_TPD`) return `429` with `Retry-After`. When no capacity remains, the gateway returns a capacity error and readiness becomes unavailable rather than claiming the pool is healthy.
 
-    style A fill:#0a0908,stroke:#2a2624,color:#eae7e1
-    style C fill:#171514,stroke:#2a2624,color:#eae7e1
-    style E fill:#171514,stroke:#2a2624,color:#eae7e1
-    style J fill:#171514,stroke:#d60019,stroke-width:2px,color:#ff1a2e
-    style O fill:#171514,stroke:#5c0a10,stroke-width:2px,color:#8a857d
-```
+## Cache and in-flight work
 
-### Pipeline
+![Cache and deduplication](assets/readme/cache-dedup.svg)
 
-| Step | Component | Behaviour |
-|:---:|:---|:---|
-| 1 | **Registry** | `gateway/data/policies.registry.json` — reset policy (`utc-midnight` / `pt-midnight`), training flags, learned-limit headers, per-model `rpm` `rpd` `tpm` `tpd` `monthlyTokens` `contextWindow` `quality` |
-| 2 | **Key pool** | Sliding 60s RPM/TPM + day/month counters. Cool on 429. Disable 1h on auth fail. Learn real limits from provider headers. |
-| 3 | **Router** | Rank by task fit, quality, privacy, remaining capacity. Interleave vendors so one saturated provider cannot burn every attempt. |
-| 4 | **Fallback** | `SAME_MODEL_NEXT_KEY` · `NEXT_MODEL` · `TRIM_CONTEXT` · `BACKOFF` · `ABORT` (`gateway/src/gateway/fallback.mjs`). Context errors preserve system prompt + newest turn. |
-| 5 | **Cache + dedup** | TTL memory cache. Identical in-flight requests share one upstream call (one quota unit). |
-| 6 | **Watchdog** | Prune windows, sweep cache, log saturation every 60s. |
+The bounded in-memory LRU cache keys normalized task, messages, generation settings, privacy, and preferred model. `CACHE_TTL_MS` and `CACHE_MAX_ENTRIES` bound retention. `skipCache` bypasses it. In-flight deduplication is a separate promise map: concurrent identical requests share one upstream operation and report `deduplicated: true`; it is not a cache hit.
 
-```
-▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
+## Telegram runtime
+
+![Telegram runtime](assets/readme/telegram-runtime.svg)
+
+Handlers load history, task mode, and FSM state before calling the gateway. Redis outages degrade history to stateless operation instead of crashing the update. Successful turns are written with the configured TTL (24 hours by default). The gateway client retries cold-start and transient statuses with bounded backoff, honors `Retry-After`, and normalizes malformed responses into `GatewayError`.
+
+Telegram replies are split at a configurable limit (default 3900), measured in UTF-16 units with Markdown fences re-balanced. This leaves headroom beneath Telegram's 4096-character hard limit. `/start`, task selection, reset/history controls and the handler flow live in [`bot/handlers.py`](bot/handlers.py).
+
+![Redis memory](assets/readme/redis-memory.svg)
+
+## Operations surfaces
+
+![Health console](assets/readme/health-console.svg)
+
+- `/api/health` answers whether the process is alive and summarizes the pool.
+- `/api/ready` answers whether at least one usable route exists.
+- `/api/status` is the authenticated operator view of providers, keys, callers, cache, dedup and registry counts.
+- The HTML dashboard is enabled by `DASHBOARD_ENABLED` and exposes the same operational vocabulary without secrets.
+
+## Configuration agreement
+
+`.env.example` is checked against code by `scripts/validate_env.py`. Important groups include:
+
+| Group | Variables |
+|---|---|
+| Runtime | `NODE_ENV`, `PORT`, `HOST`, `LOG_LEVEL`, `PARSE_MODE` |
+| Caller/auth | `USERS_JSON`, `ADMIN_KEY`, `GATEWAY_API_KEY`, `ALLOWED_USER_IDS` |
+| Providers | `GEMINI_KEY_P1..P3`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `MISTRAL_API_KEY`, `OPENROUTER_API_KEY`, `CF_ACCOUNT_ID`, `CF_API_TOKEN`, `GITHUB_TOKEN` |
+| Gateway policy | `USER_RPM`, `USER_RPD`, `USER_TPD`, `COOLDOWN_AFTER_RATE_LIMIT_MS`, `COOLDOWN_AFTER_AUTH_FAILURE_MS`, `CONTEXT_TRIM_RATIO` |
+| Cache/dedup | `CACHE_ENABLED`, `CACHE_TTL_MS`, `CACHE_MAX_ENTRIES`, `DEDUP_ENABLED`, `DEDUP_TTL_MS` |
+| Bot/Redis | `TELEGRAM_BOT_TOKEN`, `GATEWAY_URL`, `GATEWAY_HEALTH_URL`, `REDIS_URL`, `CHUNK_SIZE`, `HISTORY_MAX_TURNS`, `HISTORY_TTL_SECONDS`, `GATEWAY_MAX_RETRIES`, `STARTUP_WAIT_TIMEOUT` |
+
+See [`.env.example`](.env.example) for defaults and the complete documented list. Do not put provider credentials in the repository.
+
+## Run it
+
+### Docker Compose
+
+```bash
+cp .env.example .env
+# set TELEGRAM_BOT_TOKEN, USERS_JSON, GATEWAY_API_KEY and at least one provider key
+./setup.sh --check
+docker compose up -d --build
+docker compose logs -f bot
+curl -s http://localhost:3000/api/health | jq .
 ```
 
-## VI · CONFIGURATION
+Offline gateway smoke mode needs no provider key:
 
-`./setup.sh` copies `.env.example` → `.env`.  
-Full template: [`.env.example`](.env.example)  
-CI guard: `scripts/validate_env.py` fails if code and template drift.
-
-### Minimum viable `.env`
-
-```env
-TELEGRAM_BOT_TOKEN=123456789:AA...          # @BotFather
-ADMIN_KEY=                                  # openssl rand -hex 32 (auto by setup.sh)
-USERS_JSON=[{"key":"bot-internal-key","userId":"telegram-bot","tier":"internal"}]
-GATEWAY_API_KEY=bot-internal-key
-GROQ_API_KEY=gsk_...                        # any ONE provider key is enough
+```bash
+DEMO_MOCK=true MOCK_FALLBACK=true node gateway/src/server.mjs
+# or: (cd gateway && node scripts/smoke.mjs)
 ```
 
-Optional: `ALLOWED_USER_IDS=111111,222222` (empty = open).
+### Render / hosted Redis
 
-> [!IMPORTANT]
-> `.env` is git-ignored and created mode `600`. **Never commit keys.**
+[`render.yaml`](render.yaml) creates `konkred-gateway` as a Docker web service and `konkred-bot` as a Docker worker. Set the `sync: false` secrets in the Render dashboard. The bot points at the gateway's public `/api/ai` and `/api/health` URLs. Supply a RESP-compatible `REDIS_URL` such as an Upstash TLS URL; Render's managed Redis is not assumed by the blueprint. Deployment notes and alternative hosts are in [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
-```
-▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
-```
+![Deployment map](assets/readme/deployment-map.svg)
 
-## VII · PROJECT LAYOUT
+## Verification
 
-```text
-.
-├── docker-compose.yml
-├── .env.example
-├── render.yaml
-├── setup.sh
-├── ci/deploy.yml
-├── LICENSE
-├── .github/workflows/deploy.yml
-├── scripts/
-│   ├── verify.sh
-│   ├── validate_compose.py
-│   ├── validate_env.py
-│   ├── check_python_imports.py
-│   ├── install-workflow.sh
-│   └── integration_bot_gateway.py
-├── Makefile
-├── gateway/
-│   ├── Dockerfile  package.json
-│   ├── data/policies.registry.json
-│   ├── scripts/{check,smoke}.mjs
-│   ├── tests/gateway.test.mjs
-│   └── src/
-│       ├── server.mjs  config.mjs  util.mjs  policy-store.mjs
-│       ├── watchdog.mjs  dashboard.mjs  fullkonk.mjs  openai-shim.mjs
-│       ├── providers/{base,openai-compat,gemini,cloudflare,mock,index}.mjs
-│       └── gateway/{gateway,router,key-pool,user-limiter,fallback,cache,dedup,fusion}.mjs
-├── bot/
-│   ├── Dockerfile  requirements.txt  healthcheck.py
-│   ├── config.py  main.py  handlers.py  gateway_client.py
-│   ├── history.py  keyboards.py  chunking.py
-│   └── tests/{test_chunking,test_gateway_client,test_history,test_handlers}.py
-├── Konkred ecosystem.md
-└── step-by-step.md
-```
+![Verification console](assets/readme/verification-console.svg)
 
-```
-▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
-```
-
-## VIII · DIAGNOSTICS
+The repository's executable suite is [`scripts/verify.sh`](scripts/verify.sh). It checks Node syntax, gateway integrity/tests, Python compilation/import safety/tests, environment agreement, compose and YAML parsing, shell syntax, offline HTTP smoke, bot-to-gateway integration, asset generation/verification, and (when available) Docker builds. Run:
 
 ```bash
 ./scripts/verify.sh
-cd gateway && node --test tests/*.test.mjs
-cd gateway && node scripts/smoke.mjs
-cd bot && PYTHONPATH=tests:. python -m unittest discover -s tests -p 'test_*.py' -t .
-python scripts/integration_bot_gateway.py
+python3 tools/readme/build_assets.py
+python3 tools/readme/verify_assets.py
 ```
 
-| Suite | Yield | Command |
-|:---|:---:|:---|
-| Gateway unit | **31** | `node --test tests/*.test.mjs` |
-| Gateway smoke | **21** | `node scripts/smoke.mjs` |
-| Bot unit | **88** | `python -m unittest discover -s tests` |
-| Integration E2E | **8** | `python scripts/integration_bot_gateway.py` |
-| **Total** | **148** | `./scripts/verify.sh` |
+The CI workflow is [`ci/deploy.yml`](ci/deploy.yml) / [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). Results depend on installed tooling, provider credentials, Docker daemon access, and network availability; the verifier labels unavailable prerequisites as `SKIP`.
 
-<details>
-<summary><b>[ COVERAGE STAMPS ]</b></summary>
+## Source map
 
-- Sliding-window ceilings and cooldowns  
-- Fallback decisions for every error class  
-- Context trimming (system prompt + newest turn preserved)  
-- Cache TTL / dedup coalescing  
-- Caller quotas (RPM / RPD / TPD)  
-- UTF-16-aware chunking (emoji, code fences, no-boundary walls, infinite-loop regressions)  
-- Gateway cold starts  
-- `Retry-After` (seconds + HTTP-date)  
-- 503/504 retries  
-- Malformed 200s  
-- Redis outages and corrupt payloads  
+- Gateway server and route surface: [`gateway/src/server.mjs`](gateway/src/server.mjs)
+- Routing and recovery: [`gateway/src/gateway/`](gateway/src/gateway/)
+- Provider adapters: [`gateway/src/providers/`](gateway/src/providers/)
+- Telegram handlers and state: [`bot/handlers.py`](bot/handlers.py), [`bot/history.py`](bot/history.py), [`bot/chunking.py`](bot/chunking.py), [`bot/gateway_client.py`](bot/gateway_client.py)
+- Deployment: [`docker-compose.yml`](docker-compose.yml), [`render.yaml`](render.yaml), [`DEPLOYMENT.md`](DEPLOYMENT.md)
 
-</details>
+![KONKRED footer](assets/readme/footer.svg)
 
-```
-▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
-```
-
-## IX · DEPLOYMENT
-
-Full guide: **[DEPLOYMENT.md](DEPLOYMENT.md)**
-
-| Platform | Cost | Notes |
-|:---|:---:|:---|
-| Docker Compose on VPS | **$0** | Oracle Always-Free ARM · true 24/7 |
-| Render | Low | 1-click · [`render.yaml`](render.yaml) |
-| Koyeb | Low | CLI |
-| Fly.io | Low | Edge |
-| Upstash Redis | Free tier | Managed add-on |
-
-> [!IMPORTANT]
-> **24/7 free path:** Telegram needs an always-on worker. Render free web sleeps; free background workers do not exist. Fully free = Docker Compose on a $0 VM (Oracle Always-Free, etc.).
-
-```
-▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
-```
-
-## X · OPERATIONAL NOTES
-
-| Topic | Detail |
-|:---|:---|
-| Cold starts | Bot waits for `GET /api/health`; connect errors retry with backoff |
-| Secrets | `.env` gitignored · mode `600` · never commit keys |
-| State | Redis AOF on named volume · history TTL 24h |
-| Footer stamp | Provider/model on every reply · `SHOW_PROVIDER_FOOTER=false` to hide |
-
-```
-▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
-```
-
-## XI · CI PIPELINE
-
-> [!WARNING]
-> GitHub only runs workflows from `.github/workflows/` (needs `workflows` scope). Enable once:
-
-```bash
-./scripts/install-workflow.sh
-git add .github/workflows/deploy.yml
-git commit -m "ci: enable pipeline"
-git push
-```
-
-```mermaid
-graph LR
-    A["git push"] --> B["validate config"]
-    B --> C["test suites"]
-    C --> D["smoke containers"]
-    D --> E["deploy"]
-
-    style A fill:#0a0908,stroke:#2a2624,color:#f4f1eb
-    style B fill:#171514,stroke:#2a2624,color:#f4f1eb
-    style C fill:#171514,stroke:#2a2624,color:#f4f1eb
-    style D fill:#171514,stroke:#2a2624,color:#f4f1eb
-    style E fill:#171514,stroke:#d60019,stroke-width:2px,color:#ff1a2e
-```
-
-```
-▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
-```
-
-<div align="center">
-
-## LICENSE
-**MIT** — see headers in each source file.
-
-```
-[ END OF MANIFEST ]
-```
-
-[⬆ top](#konkred-ai-ecosystem)
-
-</div>
+MIT licensed. Built as controlled infrastructure: route deliberately, reserve honestly, recover visibly.
