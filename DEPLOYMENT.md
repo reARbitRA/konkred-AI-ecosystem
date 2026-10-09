@@ -1,23 +1,20 @@
 # Deployment Guide
 
-Four ways to run the Konkred ecosystem 24/7, ordered from **free & self-hosted** to
-**managed & one-click**. Pick one; they all use the same images, env vars and health
-endpoints.
+## Zero-cost requirement
 
-| Option | Cost | 24/7? | Effort |
+**The default deployment must cost $0.** Option 1 (Docker Compose on an Oracle Always-Free VM) is the
+only option below that runs both the gateway and the bot 24/7 at $0. The other options are paid
+(or cannot run the bot 24/7 for free) and are kept for later, once you decide to pay.
+
+| Option | Cost | Runs both services 24/7 at $0? | Notes |
 |---|---|---|---|
-| [1. Docker Compose on a VPS](#1-docker-compose-on-a-vps) | $0 (Oracle Always-Free) or ~$5/mo | ✅ | 10 min |
-| [2. Render blueprint](#2-render-1-click-blueprint) | Gateway free · worker ~$7/mo | ✅ | 5 min |
-| [3. Koyeb](#3-koyeb) | `nano` instance ≈ $2.7/mo per service (free instance can't run the bot) | ✅ | 10 min |
-| [4. Fly.io](#4-flyio) | Pay-as-you-go, ~$2–5/mo | ✅ | 15 min |
+| [1. Docker Compose on an Oracle Always-Free VM](#1-docker-compose-on-a-vps) | **$0** | ✅ | Needs an Oracle account (card at signup). Idle instances can be reclaimed (see §1.0). |
+| [2. Render blueprint](#2-render-1-click-blueprint) | Gateway free; **bot worker $7/mo** | ❌ | Free plan has no background workers; free web services sleep after 15 min idle. |
+| [3. Koyeb](#3-koyeb) | **Paid** (`nano` ≈ $2.7/mo per service) | ❌ at $0 | Free instance is web-only, scales to zero after 1 h idle, cannot run workers. |
+| [4. Fly.io](#4-flyio) | **Paid** (≈ $2.2+/mo per always-on machine) | ❌ at $0 | No free tier for new organizations (2 h trial only). |
 
-**Reality check on "zero cost":** a Telegram bot long-polls, so it needs an
-always-running process. Free *web* tiers that sleep (Render free, Koyeb free) will
-drop updates while idle. The bot is built to survive that (it waits for the gateway's
-`/api/health` and retries connect errors), but for genuinely uninterrupted 24/7
-service use **option 1** on an Oracle Always-Free VM — 4 ARM cores / 24 GB RAM at $0.
+Free tiers and the Oracle limits change. Re-check the linked pages before you rely on them.
 
----
 
 ## 0. Prerequisites
 
@@ -44,6 +41,18 @@ Credentials you need before deploying:
 ---
 
 ## 1. Docker Compose on a VPS
+
+### 1.0 Zero-cost host: Oracle Always-Free VM
+
+1. Create an Oracle Cloud account and pick a home region. Create an **Ampere A1 (`VM.Standard.A1.Flex`)**
+   instance with Ubuntu (ARM64). The official `node` and `python` base images used here are multi-arch.
+2. Stay within the **Always Free** limits (see [Oracle's Always Free resources](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm)).
+   Oracle's current page lists **2 OCPUs in total**; older guides that say 4 OCPUs / 24 GB are out of date.
+   Only upgrade to Pay As You Go if you accept that charges start above the free limits, and set a budget alert.
+3. **Idle reclamation:** Oracle may stop an Always-Free compute instance whose CPU, network and memory
+   (A1 shapes) are all below 20% (95th percentile) for 7 days. Check the instance's **Metrics** tab
+   periodically. If it is stopped, restart it. Do not rely on this VM being permanent.
+4. Follow sections 1.1–1.6 on that VM.
 
 ### 1.1 Get the code
 
@@ -187,7 +196,10 @@ For an explicit trigger + audit trail, add the deploy hook:
 
 ---
 
-## 3. Koyeb
+## 3. Koyeb (paid — not zero-cost)
+
+> **Not $0.** The free instance cannot run workers and scales to zero after an hour, so both
+> services need paid `nano` instances. Use only after you decide to pay.
 
 Koyeb builds straight from this GitHub repo. Both services use the **repo root** as the
 build context and a root Dockerfile, so no per-directory settings are needed:
@@ -298,7 +310,9 @@ koyeb service logs konkred/konkred-gateway -t build     # build logs
 
 ---
 
-## 4. Fly.io
+## 4. Fly.io (paid — not zero-cost)
+
+> **Not $0.** Fly has no free tier for new organizations (only a 2-hour trial). Both apps are always-on, so both are billed.
 
 Each Fly app has its own config at the repo root. The build context is the **repo root**, and `[build] dockerfile`
 names the Dockerfile relative to that root. Fly's `[build] dockerfile` does not change the context, so

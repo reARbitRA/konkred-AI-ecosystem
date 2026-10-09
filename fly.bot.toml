@@ -1,3 +1,4 @@
+# PAID: Fly has no free tier for new organizations. Not part of the $0 deployment (see DEPLOYMENT.md, option 1).
 # Fly.io app: konkred-bot (Telegram long-polling worker — no inbound HTTP service).
 # Build context = repo root. Dockerfile is relative to that root.
 #   fly apps create konkred-bot
