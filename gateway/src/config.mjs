@@ -98,6 +98,8 @@ export const config = Object.freeze({
     : path.join(SERVICE_ROOT, trimmed('REGISTRY_PATH', 'data/policies.registry.json')),
 
   adminKey: trimmed('ADMIN_KEY', ''),
+  /** Shared secret required on /api/fullkonk/* (x-brain-key). Empty = open (dev only). */
+  fullkonkKey: trimmed('FULLKONK_KEY', ''),
   users: parseUsers(),
   tierLimits: TIER_LIMITS,
   allowAnonymous: bool('ALLOW_ANONYMOUS', false),

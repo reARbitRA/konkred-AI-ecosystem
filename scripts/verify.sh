@@ -40,6 +40,8 @@ warn() { printf '%s  WARN%s %s\n' "$YELLOW" "$NC" "$*"; WARN=$((WARN+1)); }
 PY=python3
 if [[ -x ".venv-bot/bin/python" ]]; then PY="$(pwd)/.venv-bot/bin/python"; fi
 if [[ -n "${PYTHON:-}" ]]; then PY="$PYTHON"; fi
+# Steps below `cd bot/`, so a relative interpreter path must be made absolute first.
+if [[ "$PY" == */* ]]; then PY="$(cd "$(dirname "$PY")" && pwd)/$(basename "$PY")"; fi
 
 run() { # run <label> <cmd...>
   local label="$1"; shift
