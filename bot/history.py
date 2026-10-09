@@ -67,7 +67,11 @@ class HistoryManager:
             if role not in VALID_ROLES or not isinstance(content, str) or not content:
                 continue
             clean.append({"role": role, "content": content})
-        return clean[: MAX_HISTORY_TURNS * 2]
+        # Keep the NEWEST entries: the tail of the list is the most recent
+        # conversation. A limit of 0 would make clean[-0:] return everything,
+        # so guard it explicitly.
+        keep = MAX_HISTORY_TURNS * 2
+        return clean[-keep:] if keep > 0 else []
 
     def _truncate_to_char_budget(self, history: List[Dict[str, str]]) -> List[Dict[str, str]]:
         """Cap the serialised history at MAX_HISTORY_CHARS.

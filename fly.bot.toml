@@ -1,0 +1,21 @@
+# Fly.io app: konkred-bot (Telegram long-polling worker — no inbound HTTP service).
+# Build context = repo root. Dockerfile is relative to that root.
+#   fly apps create konkred-bot
+#   fly deploy --config fly.bot.toml            (run from the repo root)
+# Secrets are NOT stored here — set them with `fly secrets set --app konkred-bot ...`.
+app = "konkred-bot"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile.bot"
+
+[env]
+  LOG_LEVEL = "INFO"
+  PARSE_MODE = "Markdown"
+  HEARTBEAT_PATH = "/tmp/konkred-bot-heartbeat"
+
+# No [http_service]: the bot only makes outbound connections.
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "256mb"

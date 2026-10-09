@@ -1,0 +1,23 @@
+# Root build context (Dockerfile.gateway / Dockerfile.bot). Keeps secrets, VCS data and
+# local virtualenvs out of the context that is uploaded to the remote builder.
+# NOTE: never ignore a Dockerfile here — Fly and BuildKit need it inside the context.
+.git
+.github
+.env
+.env.*
+**/.env
+**/.env.*
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.venv
+**/.venv*
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+.venv-bot
+venvs
+docs
+assets
+ci
+tools

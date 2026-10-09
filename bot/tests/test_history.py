@@ -167,5 +167,28 @@ class HistoryOutageTests(unittest.IsolatedAsyncioTestCase):
         await mgr.close()
 
 
+class SanitizeTrimTests(unittest.TestCase):
+    """_sanitize must keep the NEWEST MAX_HISTORY_TURNS*2 entries, not the oldest."""
+
+    def test_keeps_newest_entries_when_over_limit(self):
+        from unittest import mock
+        import history as history_module
+
+        limit = 4
+        with mock.patch.object(history_module, "MAX_HISTORY_TURNS", 2):  # 2 turns = 4 entries
+            raw = [{"role": "user" if i % 2 == 0 else "assistant", "content": f"m{i}"} for i in range(limit + 5)]
+            clean = HistoryManager._sanitize(raw)
+        self.assertEqual(len(clean), limit)
+        self.assertEqual([m["content"] for m in clean], [f"m{i}" for i in range(5, 9)])
+
+    def test_zero_limit_returns_empty_not_everything(self):
+        from unittest import mock
+        import history as history_module
+
+        with mock.patch.object(history_module, "MAX_HISTORY_TURNS", 0):
+            clean = HistoryManager._sanitize([{"role": "user", "content": "x"}])
+        self.assertEqual(clean, [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

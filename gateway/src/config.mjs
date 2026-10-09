@@ -51,6 +51,12 @@ const collectKeys = (baseName, { slots = 6 } = {}) => {
   return [...new Set(found.filter(Boolean))];
 };
 
+/** Gemini thinkingBudget: -1 (dynamic) or 0..24576 (Flash range); anything else -> 0. */
+const geminiThinkingBudget = () => {
+  const v = int('GEMINI_THINKING_BUDGET', 0);
+  return v >= -1 && v <= 24576 ? v : 0;
+};
+
 /* ------------------------------------------------------------------ *
  * User / auth directory
  * ------------------------------------------------------------------ */
@@ -131,6 +137,8 @@ export const config = Object.freeze({
   connectTimeoutMs: int('CONNECT_TIMEOUT_MS', 10000),
   requestBodyLimitBytes: int('REQUEST_BODY_LIMIT_BYTES', 2 * 1024 * 1024),
   defaultMaxTokens: int('DEFAULT_MAX_TOKENS', 2048),
+  /** Gemini 2.5 Flash / Flash-Lite thinking budget (see .env.example GEMINI_THINKING_BUDGET). */
+  geminiThinkingBudget: geminiThinkingBudget(),
   hardMaxTokens: int('HARD_MAX_TOKENS', 8192),
   maxMessages: int('MAX_MESSAGES', 60),
   cooldownAfterRateLimitMs: int('COOLDOWN_AFTER_RATE_LIMIT_MS', 60000),

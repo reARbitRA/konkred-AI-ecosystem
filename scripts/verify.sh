@@ -62,7 +62,8 @@ step "1. Repository structure"
 required=(docker-compose.yml .env.example .gitignore setup.sh render.yaml
           ci/deploy.yml
           gateway/Dockerfile gateway/package.json gateway/data/policies.registry.json gateway/src/server.mjs
-          bot/Dockerfile bot/requirements.txt bot/main.py bot/handlers.py bot/gateway_client.py bot/chunking.py bot/history.py bot/healthcheck.py)
+          bot/Dockerfile bot/requirements.txt bot/main.py bot/handlers.py bot/gateway_client.py bot/chunking.py bot/history.py bot/healthcheck.py
+          Dockerfile.gateway Dockerfile.bot fly.gateway.toml fly.bot.toml scripts/check_docker_contexts.py)
 missing=0
 for f in "${required[@]}"; do [[ -e "$f" ]] || { warn "missing $f"; missing=$((missing+1)); }; done
 if [[ $missing -eq 0 ]]; then ok "all ${#required[@]} required files present"; else bad "$missing required file(s) missing"; fi
@@ -139,6 +140,14 @@ if have docker && docker info >/dev/null 2>&1; then
   if docker compose config --quiet; then ok "'docker compose config' resolves"; else bad "'docker compose config' rejected the file"; fi
 else
   skip "docker daemon unavailable — 'docker compose config' not run"
+fi
+
+# --------------------------------------------------------------------------- #
+step "9b. Docker build contexts (COPY sources, .dockerignore, Fly configs)"
+if $PY scripts/check_docker_contexts.py >/tmp/konkred-docker-contexts.log 2>&1; then
+  ok "every COPY source resolves from its build context"
+else
+  bad "docker build-context check failed"; cat /tmp/konkred-docker-contexts.log
 fi
 
 # --------------------------------------------------------------------------- #
@@ -237,6 +246,9 @@ if [[ $FAST -eq 1 ]]; then
 elif have docker && docker info >/dev/null 2>&1; then
   if docker build -q -t konkred-gateway:verify ./gateway >/dev/null 2>&1; then ok "gateway image builds"; else bad "gateway image build failed"; fi
   if docker build -q -t konkred-bot:verify ./bot >/dev/null 2>&1; then ok "bot image builds"; else bad "bot image build failed"; fi
+  # Root-context images (Fly / Koyeb): the repo root is the build context.
+  if docker build -q -f Dockerfile.gateway -t konkred-gateway-root:verify . >/dev/null 2>&1; then ok "root-context gateway image builds"; else bad "root-context gateway image build failed"; fi
+  if docker build -q -f Dockerfile.bot -t konkred-bot-root:verify . >/dev/null 2>&1; then ok "root-context bot image builds"; else bad "root-context bot image build failed"; fi
 else
   skip "docker daemon unavailable"
 fi

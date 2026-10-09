@@ -1,3 +1,8 @@
+> **Archived — legacy document, no longer maintained.** It describes an older setup and
+> references files that are not in this repository (e.g. `SRC-CODEBOOK.md`).
+> For the current instructions see the [“Run it” section of the README](../../README.md#run-it)
+> and [DEPLOYMENT.md](../../DEPLOYMENT.md).
+
 To have a truly bug-free, production-ready system, we do not write stubbed pseudo-code or reinvent the wheel inside Python. 
 
 The architecture consists of two microservices orchestrated via `docker-compose`:

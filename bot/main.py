@@ -89,19 +89,17 @@ async def connect_redis() -> Redis:
 
 
 async def heartbeat_loop() -> None:
+    """Keep the heartbeat fresh for the whole process lifetime.
+
+    Started before the Redis and gateway waits so that a slow dependency
+    start-up is visible as "alive but waiting" rather than "dead".
+    """
     while True:
         write_heartbeat()
         await asyncio.sleep(15)
 
 
-async def main() -> int:
-    problems = config.validate()
-    for problem in problems:
-        logger.error("config: %s", problem)
-    if problems:
-        return 2
-
-    write_heartbeat(force=True)
+async def run_bot() -> int:
     redis = await connect_redis()
     storage = RedisStorage(redis=redis)
     history_mgr = HistoryManager(redis_conn=redis)
@@ -117,7 +115,6 @@ async def main() -> int:
     await gateway_client.wait_until_ready(timeout=SETTINGS.startup_wait_timeout, interval=2.0)
     logger.info("gateway probe complete — starting polling loop")
 
-    heartbeat_task = asyncio.create_task(heartbeat_loop(), name="heartbeat")
     stop = asyncio.Event()
 
     def request_shutdown(signame: str) -> None:
@@ -142,9 +139,6 @@ async def main() -> int:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await polling
     finally:
-        heartbeat_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await heartbeat_task
         logger.info("shutting down (metrics=%s)", METRICS)
         with contextlib.suppress(Exception):
             await dp.storage.close()
@@ -155,6 +149,27 @@ async def main() -> int:
         with contextlib.suppress(Exception):
             await bot.session.close()
     return 0
+
+
+async def main() -> int:
+    problems = config.validate()
+    for problem in problems:
+        logger.error("config: %s", problem)
+    if problems:
+        return 2
+
+    # The heartbeat starts first and is cancelled on every exit path, including
+    # a failed Redis connection or a gateway that never becomes ready.
+    # Write synchronously first: create_task() does not run the coroutine until
+    # the next loop iteration, and connect_redis() may be entered before then.
+    write_heartbeat(force=True)
+    heartbeat_task = asyncio.create_task(heartbeat_loop(), name="heartbeat")
+    try:
+        return await run_bot()
+    finally:
+        heartbeat_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await heartbeat_task
 
 
 if __name__ == "__main__":

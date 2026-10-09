@@ -1,0 +1,36 @@
+# Fly.io app: konkred-gateway.
+# Build context = repo root (Fly's default). Dockerfile is relative to that root.
+#   fly apps create konkred-gateway
+#   fly deploy --config fly.gateway.toml        (run from the repo root)
+# Secrets are NOT stored here — set them with `fly secrets set --app konkred-gateway ...`.
+app = "konkred-gateway"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile.gateway"
+
+[env]
+  NODE_ENV = "production"
+  HOST = "0.0.0.0"
+  PORT = "3000"
+  DEMO_MOCK = "false"
+  MOCK_FALLBACK = "true"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = false   # the bot needs the gateway up 24/7
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "15s"
+    interval = "30s"
+    method = "GET"
+    path = "/api/health"
+    timeout = "5s"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "512mb"

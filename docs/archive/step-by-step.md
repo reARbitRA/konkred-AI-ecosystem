@@ -1,3 +1,8 @@
+> **Archived — legacy document, no longer maintained.** It describes an older setup and
+> references files that are not in this repository (e.g. `SRC-CODEBOOK.md`).
+> For the current instructions see the [“Run it” section of the README](../../README.md#run-it)
+> and [DEPLOYMENT.md](../../DEPLOYMENT.md).
+
 Here is the step-by-step guide to setting up, configuring, and running the entire ecosystem from scratch on any server (Ubuntu/Debian, VPS, or local Linux machine).
 
 ---
