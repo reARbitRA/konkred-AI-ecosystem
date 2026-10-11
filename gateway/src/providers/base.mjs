@@ -55,71 +55,97 @@ export class BaseProvider {
     throw new Error(`${this.constructor.name} must implement chat()`);
   }
 
-  /** fetch with an abort deadline + normalised error surface. */
+  /**
+   * fetch with an abort deadline + normalised error surface.
+   *
+   * The deadline covers the whole exchange — connect, headers AND body. Clearing
+   * the timer as soon as headers arrive would let a server that sends 200 and then
+   * stalls the body hold the request (and its key slot) open indefinitely.
+   */
   async request(url, { method = 'POST', headers = {}, body = null, timeoutMs = 90_000, modelId = null }) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs));
-    const startedAt = Date.now();
-    let response;
-    try {
-      response = await fetch(url, {
-        method,
-        headers,
-        body: body === null ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
-        signal: controller.signal,
-      });
-    } catch (err) {
-      const aborted = err?.name === 'AbortError';
-      throw new ProviderError({
-        status: aborted ? 504 : 0,
-        code: aborted ? 'TIMEOUT' : 'NETWORK',
-        message: aborted ? `Upstream timed out after ${timeoutMs}ms` : `Network error: ${err?.message ?? err}`,
+    const timedOut = (phase) =>
+      new ProviderError({
+        status: 504,
+        code: 'TIMEOUT',
+        message: `Upstream timed out after ${timeoutMs}ms${phase ? ` while ${phase}` : ''}`,
         providerId: this.id,
         modelId,
       });
+
+    try {
+      const startedAt = Date.now();
+      let response;
+      try {
+        response = await fetch(url, {
+          method,
+          headers,
+          body: body === null ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
+          signal: controller.signal,
+        });
+      } catch (err) {
+        if (err?.name === 'AbortError') throw timedOut('waiting for response headers');
+        throw new ProviderError({
+          status: 0,
+          code: 'NETWORK',
+          message: `Network error: ${err?.message ?? err}`,
+          providerId: this.id,
+          modelId,
+        });
+      }
+
+      // Body read is still inside the deadline. An abort here must surface as a
+      // timeout, not be swallowed into an empty body.
+      let text = '';
+      try {
+        text = await response.text();
+      } catch (err) {
+        if (err?.name === 'AbortError' || controller.signal.aborted) throw timedOut('reading the response body');
+        text = '';
+      }
+
+      const latencyMs = Date.now() - startedAt;
+      let json = null;
+      if (text) {
+        try {
+          json = JSON.parse(text);
+        } catch {
+          json = null;
+        }
+      }
+
+      if (!response.ok) {
+        const message =
+          json?.error?.message ??
+          json?.message ??
+          json?.error?.msg ??
+          (text.slice(0, 400) || `HTTP ${response.status}`);
+        const code = json?.error?.code ?? json?.error?.type ?? json?.code ?? `HTTP_${response.status}`;
+        throw new ProviderError({
+          status: response.status,
+          code: String(code),
+          message: String(message),
+          retryAfterSec: parseRetryAfter(response.headers),
+          providerId: this.id,
+          modelId,
+        });
+      }
+
+      if (!json) {
+        log.warn(this.id, `non-JSON 200 response (${latencyMs}ms)`, { modelId });
+        throw new ProviderError({
+          status: 502,
+          code: 'BAD_GATEWAY',
+          message: 'Upstream returned a non-JSON body',
+          providerId: this.id,
+          modelId,
+        });
+      }
+      return { json, headers: response.headers, latencyMs, status: response.status };
     } finally {
       clearTimeout(timer);
     }
-
-    const latencyMs = Date.now() - startedAt;
-    const text = await response.text().catch(() => '');
-    let json = null;
-    if (text) {
-      try {
-        json = JSON.parse(text);
-      } catch {
-        json = null;
-      }
-    }
-
-    if (!response.ok) {
-      const message =
-        json?.error?.message ??
-        json?.message ??
-        json?.error?.msg ??
-        (text.slice(0, 400) || `HTTP ${response.status}`);
-      const code = json?.error?.code ?? json?.error?.type ?? json?.code ?? `HTTP_${response.status}`;
-      throw new ProviderError({
-        status: response.status,
-        code: String(code),
-        message: String(message),
-        retryAfterSec: parseRetryAfter(response.headers),
-        providerId: this.id,
-        modelId,
-      });
-    }
-
-    if (!json) {
-      log.warn(this.id, `non-JSON 200 response (${latencyMs}ms)`, { modelId });
-      throw new ProviderError({
-        status: 502,
-        code: 'BAD_GATEWAY',
-        message: 'Upstream returned a non-JSON body',
-        providerId: this.id,
-        modelId,
-      });
-    }
-    return { json, headers: response.headers, latencyMs, status: response.status };
   }
 }
 

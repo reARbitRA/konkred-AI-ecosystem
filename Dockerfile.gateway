@@ -1,0 +1,29 @@
+# Konkred Gateway — BUILD CONTEXT IS THE REPO ROOT.
+#   docker build -f Dockerfile.gateway -t konkred-gateway .
+# Used by Fly (fly.gateway.toml) and Koyeb (Dockerfile location = Dockerfile.gateway, work dir empty).
+# Keep in step with gateway/Dockerfile (the compose / Render build); the static check in
+# scripts/check_docker_contexts.py verifies every COPY source resolves from this context.
+FROM node:20-alpine AS runtime
+
+ENV NODE_ENV=production \
+    PORT=3000 \
+    HOST=0.0.0.0
+
+WORKDIR /app
+
+# Zero runtime dependencies: no npm install needed.
+COPY gateway/package.json ./
+COPY gateway/src/ ./src/
+COPY gateway/data/ ./data/
+
+# Run as a non-root user.
+RUN addgroup -S konkred && adduser -S konkred -G konkred \
+    && chown -R konkred:konkred /app
+USER konkred
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+ (process.env.PORT||3000) +'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+CMD ["node", "src/server.mjs"]

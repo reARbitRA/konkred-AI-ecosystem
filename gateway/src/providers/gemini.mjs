@@ -3,9 +3,13 @@
  */
 import { BaseProvider, ProviderError } from './base.mjs';
 import { log } from '../util.mjs';
+import { config } from '../config.mjs';
 
 const BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const SYSTEM_ROLES = new Set(['system', 'developer']);
+
+/** Only Flash-family models accept thinkingBudget=0 (Pro always thinks). */
+export const supportsThinkingBudget = (modelName) => /flash/i.test(String(modelName ?? ''));
 
 export class GeminiProvider extends BaseProvider {
   constructor({ id = 'gemini', name = 'Google Generative Language' } = {}) {
@@ -13,7 +17,7 @@ export class GeminiProvider extends BaseProvider {
   }
 
   /** Translate OpenAI-style messages into Gemini `contents` + `systemInstruction`. */
-  static toGeminiPayload(messages, { maxTokens, temperature }) {
+  static toGeminiPayload(messages, { maxTokens, temperature, modelName = '', thinkingBudget = null }) {
     const systemParts = [];
     const contents = [];
     for (const m of messages ?? []) {
@@ -36,13 +40,16 @@ export class GeminiProvider extends BaseProvider {
         candidateCount: 1,
       },
     };
+    if (thinkingBudget !== null && thinkingBudget !== undefined && supportsThinkingBudget(modelName)) {
+      body.generationConfig.thinkingConfig = { thinkingBudget };
+    }
     if (systemParts.length) body.systemInstruction = { parts: [{ text: systemParts.join('\n\n') }] };
     return body;
   }
 
-  async chat({ model, messages, maxTokens = 2048, temperature = 0.5, key, timeoutMs = 90_000 }) {
+  async chat({ model, messages, maxTokens = 2048, temperature = 0.5, key, timeoutMs = 90_000, thinkingBudget = config.geminiThinkingBudget }) {
     const url = `${BASE}/${encodeURIComponent(model.modelName)}:generateContent?key=${encodeURIComponent(key.key)}`;
-    const body = GeminiProvider.toGeminiPayload(messages, { maxTokens, temperature });
+    const body = GeminiProvider.toGeminiPayload(messages, { maxTokens, temperature, modelName: model.modelName, thinkingBudget });
 
     const { json, headers, latencyMs } = await this.request(url, {
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },

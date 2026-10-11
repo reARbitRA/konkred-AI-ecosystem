@@ -1,23 +1,20 @@
 # Deployment Guide
 
-Four ways to run the Konkred ecosystem 24/7, ordered from **free & self-hosted** to
-**managed & one-click**. Pick one; they all use the same images, env vars and health
-endpoints.
+## Zero-cost requirement
 
-| Option | Cost | 24/7? | Effort |
+**The default deployment must cost $0.** Option 1 (Docker Compose on an Oracle Always-Free VM) is the
+only option below that runs both the gateway and the bot 24/7 at $0. The other options are paid
+(or cannot run the bot 24/7 for free) and are kept for later, once you decide to pay.
+
+| Option | Cost | Runs both services 24/7 at $0? | Notes |
 |---|---|---|---|
-| [1. Docker Compose on a VPS](#1-docker-compose-on-a-vps) | $0 (Oracle Always-Free) or ~$5/mo | ✅ | 10 min |
-| [2. Render blueprint](#2-render-1-click-blueprint) | Gateway free · worker ~$7/mo | ✅ | 5 min |
-| [3. Koyeb](#3-koyeb) | Free tier (1 small service) | ⚠️ partial | 10 min |
-| [4. Fly.io](#4-flyio) | Pay-as-you-go, ~$2–5/mo | ✅ | 15 min |
+| [1. Docker Compose on an Oracle Always-Free VM](#1-docker-compose-on-a-vps) | **$0** | ✅ | Needs an Oracle account (card at signup). Idle instances can be reclaimed (see §1.0). |
+| [2. Render blueprint](#2-render-1-click-blueprint) | Gateway free; **bot worker $7/mo** | ❌ | Free plan has no background workers; free web services sleep after 15 min idle. |
+| [3. Koyeb](#3-koyeb) | **Paid** (`nano` ≈ $2.7/mo per service) | ❌ at $0 | Free instance is web-only, scales to zero after 1 h idle, cannot run workers. |
+| [4. Fly.io](#4-flyio) | **Paid** (≈ $2.2+/mo per always-on machine) | ❌ at $0 | No free tier for new organizations (2 h trial only). |
 
-**Reality check on "zero cost":** a Telegram bot long-polls, so it needs an
-always-running process. Free *web* tiers that sleep (Render free, Koyeb free) will
-drop updates while idle. The bot is built to survive that (it waits for the gateway's
-`/api/health` and retries connect errors), but for genuinely uninterrupted 24/7
-service use **option 1** on an Oracle Always-Free VM — 4 ARM cores / 24 GB RAM at $0.
+Free tiers and the Oracle limits change. Re-check the linked pages before you rely on them.
 
----
 
 ## 0. Prerequisites
 
@@ -44,6 +41,18 @@ Credentials you need before deploying:
 ---
 
 ## 1. Docker Compose on a VPS
+
+### 1.0 Zero-cost host: Oracle Always-Free VM
+
+1. Create an Oracle Cloud account and pick a home region. Create an **Ampere A1 (`VM.Standard.A1.Flex`)**
+   instance with Ubuntu (ARM64). The official `node` and `python` base images used here are multi-arch.
+2. Stay within the **Always Free** limits (see [Oracle's Always Free resources](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm)).
+   Oracle's current page lists **2 OCPUs in total**; older guides that say 4 OCPUs / 24 GB are out of date.
+   Only upgrade to Pay As You Go if you accept that charges start above the free limits, and set a budget alert.
+3. **Idle reclamation:** Oracle may stop an Always-Free compute instance whose CPU, network and memory
+   (A1 shapes) are all below 20% (95th percentile) for 7 days. Check the instance's **Metrics** tab
+   periodically. If it is stopped, restart it. Do not rely on this VM being permanent.
+4. Follow sections 1.1–1.6 on that VM.
 
 ### 1.1 Get the code
 
@@ -187,72 +196,175 @@ For an explicit trigger + audit trail, add the deploy hook:
 
 ---
 
-## 3. Koyeb
+## 3. Koyeb (paid — not zero-cost)
 
-Koyeb has no repo-root blueprint format, so use the CLI (free tier: one small service,
-which fits the gateway; run the bot elsewhere or upgrade to a second service).
+> **Not $0.** The free instance cannot run workers and scales to zero after an hour, so both
+> services need paid `nano` instances. Use only after you decide to pay.
+
+Koyeb builds straight from this GitHub repo. Both services use the **repo root** as the
+build context and a root Dockerfile, so no per-directory settings are needed:
+
+| Service | Type | Dockerfile location (`--git-docker-dockerfile`) | Work directory |
+|---|---|---|---|
+| `konkred-gateway` | web (port 3000) | `Dockerfile.gateway` | *(empty = repo root)* |
+| `konkred-bot` | worker (no ports) | `Dockerfile.bot` | *(empty = repo root)* |
+
+Koyeb's **Work directory** setting is only needed for a service that lives in a sub-folder; leave it
+empty here. The **Dockerfile location** is relative to the work directory.
+
+**Plan notes (Koyeb docs):** the *Free* instance can only run a web service, scales to zero after an
+hour idle, and cannot be used for workers, so the bot needs a paid instance. `nano` is the smallest
+standard instance type. Connect the GitHub repo to Koyeb once (control panel → GitHub) so it can
+pull the code.
+
+### 3.1 Install the CLI and log in
+
+Install and log in using the official guide: <https://www.koyeb.com/docs/build-and-deploy/cli/installation>
 
 ```bash
-curl -sL https://get.koyeb.com | sudo bash     # or: pip install koyebctl
 koyeb login
-
-koyeb service create konkred-gateway \
-  --type docker --dockerfile gateway/Dockerfile --docker-entrypoint "node src/server.mjs" \
-  --ports 3000:http --health-checks 3000:http --routes /:3000 \
-  --min-scale 1 --max-scale 1 --instance-type small \
-  --env NODE_ENV=production --env DEMO_MOCK=false --env MOCK_FALLBACK=true \
-  --env ADMIN_KEY@ <(openssl rand -hex 32) \
-  --env USERS_JSON='[{"key":"bot-internal-key","userId":"telegram-bot","tier":"internal"}]' \
-  --env GROQ_API_KEY@ --env CEREBRAS_API_KEY@ --env GEMINI_KEY_P1@ \
-  --checks 3000:http:startup=/api/health:health=/api/health
-
-koyeb service create konkred-bot \
-  --type docker --dockerfile bot/Dockerfile --docker-entrypoint "python main.py" \
-  --min-scale 1 --max-scale 1 --instance-type small \
-  --env TELEGRAM_BOT_TOKEN@ --env GATEWAY_API_KEY=bot-internal-key \
-  --env GATEWAY_URL=https://konkred-gateway-<org>.koyeb.app/api/ai \
-  --env REDIS_URL=rediss://default:<password>@<endpoint>.upstash.io:6379 \
-  --env STARTUP_WAIT_TIMEOUT=300
-
-koyeb services list
-koyeb logs konkred-bot --follow
 ```
 
-Note: Koyeb builds from the repo root context; because each Dockerfile lives in its
-service directory, pass `--dockerfile` as above (the CLI copies the repo and builds
-that file). If your Koyeb plan only allows a root Dockerfile, add a thin
-`Dockerfile.gateway` / `Dockerfile.bot` that `COPY`s from the respective directories.
+### 3.2 Create the secrets once
+
+Store the secret values in Koyeb rather than in the command line. Generate them locally and keep a copy
+in your password manager, because the gateway and the bot must share `BOT_KEY`:
+
+```bash
+export ADMIN_KEY="$(openssl rand -hex 32)"
+export BOT_KEY="$(openssl rand -hex 24)"
+export USERS_JSON="[{\"key\":\"$BOT_KEY\",\"userId\":\"telegram-bot\",\"tier\":\"internal\"}]"
+
+koyeb secrets create KONKRED_ADMIN_KEY     -v "$ADMIN_KEY"
+koyeb secrets create KONKRED_BOT_KEY       -v "$BOT_KEY"
+koyeb secrets create KONKRED_USERS_JSON    -v "$USERS_JSON"
+koyeb secrets create KONKRED_GROQ_KEY      -v "$GROQ_API_KEY"
+koyeb secrets create KONKRED_GEMINI_KEY_P1 -v "$GEMINI_KEY_P1"
+koyeb secrets create KONKRED_TELEGRAM_TOKEN -v "$TELEGRAM_BOT_TOKEN"
+koyeb secrets create KONKRED_REDIS_URL     -v "rediss://default:<password>@<endpoint>.upstash.io:6379"
+```
+
+Secrets are created with `koyeb secrets create NAME -v VALUE` (per the Koyeb docs) and referenced in
+`--env` as `NAME=@SECRET_NAME`.
+
+### 3.3 Gateway (web service)
+
+```bash
+koyeb service create konkred-gateway \
+  --app konkred \
+  --git github.com/reARbitRA/konkred-AI-ecosystem \
+  --git-branch main \
+  --git-builder docker \
+  --git-docker-dockerfile Dockerfile.gateway \
+  --instance-type nano \
+  --regions fra \
+  --min-scale 1 --max-scale 1 \
+  --ports 3000:http \
+  --routes /:3000 \
+  --checks 3000:http:/api/health \
+  --env NODE_ENV=production \
+  --env DEMO_MOCK=false \
+  --env MOCK_FALLBACK=true \
+  --env ADMIN_KEY=@KONKRED_ADMIN_KEY \
+  --env USERS_JSON=@KONKRED_USERS_JSON \
+  --env GROQ_API_KEY=@KONKRED_GROQ_KEY \
+  --env GEMINI_KEY_P1=@KONKRED_GEMINI_KEY_P1
+```
+
+Add any other provider keys the same way (`--env CEREBRAS_API_KEY=@…`). Use the **public domain** that Koyeb
+shows for this service (`koyeb app get konkred`) in the bot's `GATEWAY_URL` below.
+
+### 3.4 Bot (worker — no inbound port)
+
+```bash
+koyeb service create konkred-bot \
+  --app konkred \
+  --type worker \
+  --git github.com/reARbitRA/konkred-AI-ecosystem \
+  --git-branch main \
+  --git-builder docker \
+  --git-docker-dockerfile Dockerfile.bot \
+  --instance-type nano \
+  --regions fra \
+  --min-scale 1 --max-scale 1 \
+  --env TELEGRAM_BOT_TOKEN=@KONKRED_TELEGRAM_TOKEN \
+  --env GATEWAY_API_KEY=@KONKRED_BOT_KEY \
+  --env GATEWAY_URL=https://<gateway-domain>.koyeb.app/api/ai \
+  --env GATEWAY_HEALTH_URL=https://<gateway-domain>.koyeb.app/api/health \
+  --env REDIS_URL=@KONKRED_REDIS_URL \
+  --env STARTUP_WAIT_TIMEOUT=300
+```
+
+Replace `<gateway-domain>` with the gateway's public domain. Koyeb has no Redis of its own, so use an
+external one such as Upstash (`rediss://…`). The git branch is `main`, so merge the change before
+deploying, or point `--git-branch` at the branch you are testing.
+
+### 3.5 Check
+
+```bash
+koyeb app get konkred                                   # domains
+koyeb service get konkred/konkred-gateway               # status
+koyeb service logs konkred/konkred-bot -t runtime       # bot runtime logs
+koyeb service logs konkred/konkred-gateway -t build     # build logs
+```
 
 ---
 
-## 4. Fly.io
+## 4. Fly.io (paid — not zero-cost)
+
+> **Not $0.** Fly has no free tier for new organizations (only a 2-hour trial). Both apps are always-on, so both are billed.
+
+Each Fly app has its own config at the repo root. The build context is the **repo root**, and `[build] dockerfile`
+names the Dockerfile relative to that root. Fly's `[build] dockerfile` does not change the context, so
+deploy **from the repo root** with `--config`:
+
+| App | Config | Dockerfile | Process |
+|---|---|---|---|
+| `konkred-gateway` | [`fly.gateway.toml`](fly.gateway.toml) | `Dockerfile.gateway` | HTTP service on 3000, `/api/health` check, always on |
+| `konkred-bot` | [`fly.bot.toml`](fly.bot.toml) | `Dockerfile.bot` | worker (no `[http_service]`) |
+
+Install flyctl and log in: <https://fly.io/docs/flyctl/install/> then `fly auth login`.
+Fly app names are global, so pick different names if these are taken, and update `app = "…"` in the TOML files.
+
+### 4.1 Create the apps and set secrets
 
 ```bash
-curl -L https://fly.io/install.sh | sh && fly auth login
-fly launch --no-deploy --copy-config --name konkred-gateway   # choose the gateway dir when prompted
-# or create both apps explicitly:
+export ADMIN_KEY="$(openssl rand -hex 32)"
+export BOT_KEY="$(openssl rand -hex 24)"
+export USERS_JSON="[{\"key\":\"$BOT_KEY\",\"userId\":\"telegram-bot\",\"tier\":\"internal\"}]"
+
 fly apps create konkred-gateway
-fly deploy --app konkred-gateway --dockerfile gateway/Dockerfile --local-only
 fly secrets set --app konkred-gateway \
-  ADMIN_KEY="$(openssl rand -hex 32)" \
-  USERS_JSON='[{"key":"bot-internal-key","userId":"telegram-bot","tier":"internal"}]' \
-  GROQ_API_KEY="$GROQ_API_KEY" DEMO_MOCK=false
+  ADMIN_KEY="$ADMIN_KEY" \
+  USERS_JSON="$USERS_JSON" \
+  GROQ_API_KEY="$GROQ_API_KEY" \
+  GEMINI_KEY_P1="$GEMINI_KEY_P1"
 
 fly apps create konkred-bot
-fly deploy --app konkred-bot --dockerfile bot/Dockerfile --local-only
 fly secrets set --app konkred-bot \
   TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" \
-  GATEWAY_API_KEY=bot-internal-key \
+  GATEWAY_API_KEY="$BOT_KEY" \
   GATEWAY_URL="https://konkred-gateway.fly.dev/api/ai" \
+  GATEWAY_HEALTH_URL="https://konkred-gateway.fly.dev/api/health" \
   REDIS_URL="rediss://default:<password>@<endpoint>.upstash.io:6379"
+```
 
+### 4.2 Deploy (from the repo root)
+
+```bash
+fly deploy --config fly.gateway.toml
+fly deploy --config fly.bot.toml
+```
+
+### 4.3 Check
+
+```bash
 fly status --app konkred-gateway
 fly logs --app konkred-bot
 ```
 
-Prefer a private network over the public URL? Deploy both apps in the same region and
-use `http://konkred-gateway.internal:3000/api/ai` (Fly's internal DNS, no public
-exposure, no TLS needed).
+For a private gateway (no public URL), deploy both apps in the same org and use
+`http://konkred-gateway.internal:3000/api/ai` in the bot's `GATEWAY_URL`. Fly's private DNS does not need TLS.
 
 ---
 
