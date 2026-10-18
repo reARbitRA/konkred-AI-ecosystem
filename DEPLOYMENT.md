@@ -40,6 +40,39 @@ Credentials you need before deploying:
 
 ---
 
+## Vercel — API-only Gateway (no Telegram bot)
+
+The repository has a Vercel Node Function adapter at `api/[...path].mjs`. This runs only the HTTP Gateway; it does not deploy the Telegram worker or need Redis for inference. Use a separate Vercel project (`konkred-ai-gateway`) rather than replacing a frontend project. Set the repository root as the project root and keep the Node.js runtime.
+
+Add these Vercel environment variables for Production, Preview, and Development:
+
+| Variable | Value |
+|---|---|
+| `USERS_JSON_BASE64` | Base64 of a JSON array containing one unique client key per server-side app, e.g. `[ {"key":"…","userId":"app-a","tier":"standard"} ]` |
+| `GROQ_API_KEY` or another provider variable | The provider secret; add at least one |
+| `DEMO_MOCK` | `false` |
+| `MOCK_FALLBACK` | `false` |
+| `ADMIN_KEY` | Long random secret |
+| `FULLKONK_KEY` | Long random secret; prevents the optional FullKONK routes from being open |
+| `MAX_ATTEMPTS` | `2` |
+| `ATTEMPT_TIMEOUT_MS` | `40000` |
+| `WATCHDOG_ENABLED` | `false` |
+| `DASHBOARD_ENABLED` | `false` |
+
+Generate `USERS_JSON_BASE64` without putting the client key in source control:
+
+```bash
+python3 - <<'PY'
+import base64, json
+users = [{"key": "REPLACE_WITH_RANDOM_CLIENT_KEY", "userId": "app-a", "tier": "standard"}]
+print(base64.b64encode(json.dumps(users, separators=(",", ":")).encode()).decode())
+PY
+```
+
+After deployment, test `/api/health`, then call `/api/ai` with `x-api-key: <client-key>` or use the OpenAI-compatible `/v1/chat/completions` endpoint. Provider keys and client keys must stay server-side; do not embed either in browser bundles. If browser apps need access, call the Gateway through each app's own backend/BFF.
+
+**Vercel limitation:** caller quotas, provider cooldowns, cache, and deduplication are in process memory. They are best-effort on serverless and not shared across function instances or cold starts. Add shared Redis/database state before depending on strict quotas or scaling. Vercel's function duration is capped at 300 seconds by this configuration; the reduced attempt limits above help keep requests within that bound.
+
 ## 1. Docker Compose on a VPS
 
 ### 1.0 Zero-cost host: Oracle Always-Free VM
