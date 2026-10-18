@@ -67,7 +67,7 @@ jobs:
           fail=0
           while IFS= read -r -d '' f; do
             node --check "$f" || { echo "::error::syntax error in $f"; fail=1; }
-          done < <(find gateway/src gateway/scripts gateway/tests -name '*.mjs' -print0)
+          done < <(find gateway/src gateway/scripts gateway/tests api -name '*.mjs' -print0)
           exit $fail
 
       - name: Gateway integrity (import graph + registry + invariants)
@@ -81,6 +81,9 @@ jobs:
 
       - name: .env.example ↔ code agreement
         run: python scripts/validate_env.py
+
+      - name: Vercel API config
+        run: python -c "import json; json.load(open('vercel.json')); print('vercel.json is valid')"
 
       - name: docker-compose.yml topology validation
         run: python scripts/validate_compose.py

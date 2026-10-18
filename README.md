@@ -162,6 +162,22 @@ DEMO_MOCK=true MOCK_FALLBACK=true node gateway/src/server.mjs
 # or: (cd gateway && node scripts/smoke.mjs)
 ```
 
+### Vercel (API-only Gateway)
+
+The repository includes a Vercel Node Function adapter at [`api/[...path].mjs`](api/[...path].mjs) and rewrites in [`vercel.json`](vercel.json). This deploys the HTTP Gateway only; the Telegram worker and Redis conversation store are not required for API inference. Import the repository as a Vercel project with the repository root as the root directory and no custom build command.
+
+Set these environment variables in the Vercel project before using the API:
+
+- `USERS_JSON` (or `USERS_JSON_BASE64`, a base64-encoded JSON array): one record per client app, with a unique random `key`, `userId`, and tier.
+- At least one server-side provider secret, such as `GROQ_API_KEY` or `GEMINI_KEY_P1`.
+- `DEMO_MOCK=false` and `MOCK_FALLBACK=false` so unavailable providers fail visibly instead of returning simulator output.
+- A strong `ADMIN_KEY`; also set `FULLKONK_KEY` if the FullKONK routes remain enabled.
+- `WATCHDOG_ENABLED=false`, `MAX_ATTEMPTS=2`, and `ATTEMPT_TIMEOUT_MS=40000` are recommended to keep multi-stage requests within the configured Vercel function duration.
+
+Server-side clients can call `POST /api/ai` with `x-api-key: <client-key>` (or a Bearer token), or use the OpenAI-compatible endpoint with base URL `https://<deployment>/v1`. Provider credentials and gateway client keys are both secrets: never embed either in browser code; use a backend/BFF for browser-facing apps.
+
+**Serverless state limitation:** quota counters, provider-key cooldowns, cache, and in-flight deduplication are currently process-local. Vercel can run concurrent function instances, so these are not globally consistent or durable across cold starts. This is suitable for a small API beta, but a shared Redis/database store should be added before relying on strict per-app quotas or scaling traffic.
+
 ### Render / hosted Redis
 
 [`render.yaml`](render.yaml) creates `konkred-gateway` as a Docker web service and `konkred-bot` as a Docker worker. Set the `sync: false` secrets in the Render dashboard. The bot points at the gateway's public `/api/ai` and `/api/health` URLs. Supply a RESP-compatible `REDIS_URL` such as an Upstash TLS URL; Render's managed Redis is not assumed by the blueprint. Deployment notes and alternative hosts are in [`DEPLOYMENT.md`](DEPLOYMENT.md).

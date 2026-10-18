@@ -70,6 +70,15 @@ const parseUsers = () => {
       console.warn(`[config] USERS_JSON is not valid JSON (${err.message}); falling back to USERS_JSON_PATH`);
     }
   }
+  const encoded = trimmed('USERS_JSON_BASE64', '');
+  if (encoded) {
+    try {
+      const parsed = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'));
+      if (Array.isArray(parsed)) return parsed;
+    } catch (err) {
+      console.warn(`[config] USERS_JSON_BASE64 is not valid base64-encoded JSON (${err.message}); falling back to USERS_JSON_PATH`);
+    }
+  }
   const file = trimmed('USERS_JSON_PATH', '');
   if (file && existsSync(file)) {
     try {

@@ -59,8 +59,8 @@ echo "════════════════════════�
 
 # --------------------------------------------------------------------------- #
 step "1. Repository structure"
-required=(docker-compose.yml .env.example .gitignore setup.sh render.yaml
-          ci/deploy.yml
+required=(docker-compose.yml .env.example .gitignore package.json setup.sh render.yaml vercel.json
+          api/'[...path].mjs' ci/deploy.yml
           gateway/Dockerfile gateway/package.json gateway/data/policies.registry.json gateway/src/server.mjs
           bot/Dockerfile bot/requirements.txt bot/main.py bot/handlers.py bot/gateway_client.py bot/chunking.py bot/history.py bot/healthcheck.py
           Dockerfile.gateway Dockerfile.bot fly.gateway.toml fly.bot.toml scripts/check_docker_contexts.py)
@@ -76,7 +76,7 @@ if have node; then
   while IFS= read -r -d '' f; do
     count=$((count+1))
     node --check "$f" >/dev/null 2>&1 || { bad "node --check $f"; errs=$((errs+1)); }
-  done < <(find gateway/src gateway/scripts gateway/tests -name '*.mjs' -print0)
+  done < <(find gateway/src gateway/scripts gateway/tests api -name '*.mjs' -print0)
   [[ $errs -eq 0 ]] && ok "$count ESM modules parse"
 else
   skip "node not installed"
@@ -140,6 +140,14 @@ if have docker && docker info >/dev/null 2>&1; then
   if docker compose config --quiet; then ok "'docker compose config' resolves"; else bad "'docker compose config' rejected the file"; fi
 else
   skip "docker daemon unavailable — 'docker compose config' not run"
+fi
+
+# --------------------------------------------------------------------------- #
+step "9a. Vercel API deployment config"
+if have node && node -e "JSON.parse(require('node:fs').readFileSync('vercel.json', 'utf8'))"; then
+  ok "vercel.json parses"
+else
+  bad "vercel.json is invalid"
 fi
 
 # --------------------------------------------------------------------------- #
