@@ -44,12 +44,12 @@ Credentials you need before deploying:
 
 The repository has a Vercel Node Function adapter at `api/[...path].mjs`. This runs only the HTTP Gateway; it does not deploy the Telegram worker or need Redis for inference. Use a separate Vercel project (`konkred-ai-gateway`) rather than replacing a frontend project. Set the repository root as the project root and keep the Node.js runtime.
 
-Add these Vercel environment variables for Production, Preview, and Development:
+Add these Vercel environment variables. Apply the sensitive provider secrets to Production and Preview; Vercel does not allow sensitive shared variables in Development. Non-sensitive tuning variables can also be set for Development if you use `vercel dev`.
 
 | Variable | Value |
 |---|---|
 | `USERS_JSON_BASE64` | Base64 of a JSON array containing one unique client key per server-side app, e.g. `[ {"key":"…","userId":"app-a","tier":"standard"} ]` |
-| `GROQ_API_KEY` or another provider variable | The provider secret; add at least one |
+| Provider key(s) | At least one supported key: `GEMINI_KEY_P1`–`GEMINI_KEY_P6`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `MISTRAL_API_KEY`, or `OPENROUTER_API_KEY` |
 | `DEMO_MOCK` | `false` |
 | `MOCK_FALLBACK` | `false` |
 | `ADMIN_KEY` | Long random secret |
