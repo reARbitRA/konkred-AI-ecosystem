@@ -13,18 +13,21 @@ const ENDPOINTS = Object.freeze({
 });
 
 export class OpenAICompatProvider extends BaseProvider {
-  constructor({ id, name, endpoint = null, extraHeaders = null }) {
+  constructor({ id, name, endpoint = null, extraHeaders = null, authHeader = 'Authorization', authScheme = 'Bearer' }) {
     super({ id, name });
     this.endpoint = endpoint ?? ENDPOINTS[id];
     this.extraHeaders = extraHeaders ?? {};
+    this.authHeader = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(authHeader) ? authHeader : 'Authorization';
+    this.authScheme = String(authScheme ?? 'Bearer').trim();
     if (!this.endpoint) throw new Error(`[openai-compat] no endpoint configured for provider "${id}"`);
   }
 
   #authHeaders(key) {
+    const credential = this.authScheme ? `${this.authScheme} ${key.key}` : key.key;
     const headers = {
       'Content-Type': 'application/json',
       Accept: 'application/json',
-      Authorization: `Bearer ${key.key}`,
+      [this.authHeader]: credential,
       ...this.extraHeaders,
     };
     if (this.id === 'openrouter') {

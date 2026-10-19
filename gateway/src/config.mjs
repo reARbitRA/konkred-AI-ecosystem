@@ -5,6 +5,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { PROVIDER_PROFILES } from './providers/profiles.mjs';
 
 const SRC_DIR = path.dirname(fileURLToPath(import.meta.url));
 const SERVICE_ROOT = path.resolve(SRC_DIR, '..');
@@ -38,17 +39,190 @@ export const toList = (value) =>
     .filter(Boolean);
 
 /**
- * Collect provider keys from every supported convention:
- *   GROQ_API_KEY, GROQ_API_KEYS, GROQ_KEY_P1..GROQ_KEY_P5
- * Returns a de-duplicated array (order preserved = priority order).
+ * Collect provider keys without exposing their values in diagnostics. Supported
+ * forms include PREFIX_API_KEY(S), PREFIX_KEY_P1..P6, PREFIX_KEY1..6 and
+ * PREFIX_API_KEY_P1..P6. Aliases such as HF_TOKEN are handled by the detector.
  */
-const collectKeys = (baseName, { slots = 6 } = {}) => {
+const collectKeys = (prefixes, { slots = 6, env = process.env } = {}) => {
   const found = [];
-  found.push(...toList(raw(`${baseName}_API_KEY`)), ...toList(raw(`${baseName}_API_KEYS`)));
-  for (let i = 1; i <= slots; i += 1) {
-    found.push(...toList(raw(`${baseName}_KEY_P${i}`)), ...toList(raw(`${baseName}_KEY${i}`)));
+  for (const prefix of Array.isArray(prefixes) ? prefixes : [prefixes]) {
+    const base = String(prefix).toUpperCase().replace(/-/g, '_');
+    const names = [`${base}_API_KEY`, `${base}_API_KEYS`];
+    for (let i = 1; i <= slots; i += 1) {
+      names.push(`${base}_KEY_P${i}`, `${base}_KEY${i}`, `${base}_API_KEY_P${i}`, `${base}_API_KEY${i}`);
+    }
+    if (base === 'HF' || base === 'HUGGINGFACE' || base === 'HUGGING_FACE') names.push('HF_TOKEN');
+    if (base === 'CF' || base === 'CLOUDFLARE') names.push('CF_API_TOKEN', 'CLOUDFLARE_API_TOKEN');
+    for (const name of names) found.push(...toList(env[name] ?? ''));
   }
   return [...new Set(found.filter(Boolean))];
+};
+
+const providerIdForPrefix = (prefix) => {
+  const normalized = String(prefix).toUpperCase().replace(/-/g, '_');
+  const aliases = {
+    APIMIX: 'apmix',
+    HUGGING_FACE: 'huggingface',
+    HF: 'huggingface',
+    CLOUDFLARE: 'cloudflare',
+    CF: 'cloudflare',
+    GITHUB: 'github',
+  };
+  return aliases[normalized] ?? normalized.toLowerCase().replace(/_+/g, '-');
+};
+
+const prefixForProviderId = (providerId) => String(providerId).toUpperCase().replace(/-/g, '_');
+
+const keyPrefixFromEnvName = (name) => {
+  const patterns = [
+    /^(.*)_API_KEYS?$/i,
+    /^(.*)_API_KEY_P\d+$/i,
+    /^(.*)_API_KEY\d+$/i,
+    /^(.*)_KEY_P\d+$/i,
+    /^(.*)_KEY\d+$/i,
+  ];
+  if (String(name).toUpperCase() === 'HF_TOKEN') return 'HF';
+  for (const pattern of patterns) {
+    const match = String(name).match(pattern);
+    if (match?.[1]) return match[1];
+  }
+  return null;
+};
+
+const uniqueModelIdPart = (modelName) => String(modelName)
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '')
+  .slice(0, 72) || 'default';
+
+const normalizeChatEndpoint = (baseUrl, explicitEndpoint = false) => {
+  const value = String(baseUrl ?? '').trim().replace(/\/+$/, '');
+  if (!value) return null;
+  if (explicitEndpoint || /\/chat\/completions$/i.test(value)) return value;
+  return `${value}/chat/completions`;
+};
+
+const providerModelNames = (providerId, prefixes, profile, env) => {
+  const base = prefixes[0] ?? prefixForProviderId(providerId);
+  const modelEnv = profile?.modelEnv ?? `${base}_MODEL`;
+  const modelsEnv = profile?.modelsEnv ?? `${base}_MODELS`;
+  const explicitModels = toList(env[modelsEnv] ?? '');
+  if (explicitModels.length) return explicitModels;
+  const selected = String(env[modelEnv] ?? '').trim();
+  if (selected) return [selected];
+  return [...(profile?.defaultModels ?? [])];
+};
+
+const dynamicModels = (providerId, names, providerConfig, profile = {}) => names.map((modelName) => {
+  const slug = uniqueModelIdPart(modelName);
+  return {
+    id: `${providerId}:${slug}`,
+    providerId,
+    modelName,
+    rpm: providerConfig.rpm,
+    rpd: null,
+    tpm: providerConfig.tpm,
+    tpd: null,
+    monthlyTokens: null,
+    contextWindow: providerConfig.contextWindow ?? profile.contextWindow ?? 32_768,
+    quality: providerConfig.quality ?? profile.quality ?? 3,
+    lastVerifiedAt: null,
+    confidence: 'low',
+  };
+});
+
+const makeProviderConfig = (providerId, prefixes, profile, env) => {
+  const basePrefix = prefixes[0] ?? prefixForProviderId(providerId);
+  const keys = collectKeys(prefixes, { env });
+  const explicitEndpoint = String(env[`${basePrefix}_ENDPOINT`] ?? '').trim();
+  const configuredBaseUrl = String(env[`${basePrefix}_BASE_URL`] ?? '').trim();
+  const endpoint = explicitEndpoint
+    ? normalizeChatEndpoint(explicitEndpoint, true)
+    : normalizeChatEndpoint(configuredBaseUrl || profile?.baseUrl, false);
+  const names = providerModelNames(providerId, prefixes, profile, env);
+  const rpm = Number.parseInt(String(env[`${basePrefix}_RPM`] ?? ''), 10);
+  const tpm = Number.parseInt(String(env[`${basePrefix}_TPM`] ?? ''), 10);
+  const contextWindow = Number.parseInt(String(env[`${basePrefix}_CONTEXT_WINDOW`] ?? ''), 10);
+  const providerConfig = {
+    id: providerId,
+    name: String(env[`${basePrefix}_PROVIDER_NAME`] ?? profile?.name ?? providerId).trim(),
+    keys,
+    endpoint,
+    authHeader: String(env[`${basePrefix}_AUTH_HEADER`] ?? profile?.authHeader ?? 'Authorization').trim(),
+    authScheme: String(env[`${basePrefix}_AUTH_SCHEME`] ?? profile?.authScheme ?? 'Bearer').trim(),
+    rpm: Number.isFinite(rpm) && rpm > 0 ? rpm : (profile?.rpm ?? 10),
+    tpm: Number.isFinite(tpm) && tpm > 0 ? tpm : (profile?.tpm ?? 10_000),
+    contextWindow: Number.isFinite(contextWindow) && contextWindow > 0 ? contextWindow : (profile?.contextWindow ?? 32_768),
+    quality: profile?.quality ?? 3,
+    trainsOnData: Boolean(profile?.trainsOnData),
+    resetPolicy: profile?.resetPolicy ?? 'utc-midnight',
+    models: [],
+  };
+  providerConfig.models = dynamicModels(providerId, names, providerConfig, profile);
+  return providerConfig;
+};
+
+const discoverProviderConfigs = (env = process.env) => {
+  const configs = {
+    gemini: makeProviderConfig('gemini', ['GEMINI'], { name: 'Google Generative Language' }, env),
+    groq: makeProviderConfig('groq', ['GROQ'], { name: 'Groq Cloud' }, env),
+    cerebras: makeProviderConfig('cerebras', ['CEREBRAS'], { name: 'Cerebras Inference' }, env),
+    mistral: makeProviderConfig('mistral', ['MISTRAL'], { name: 'Mistral La Plateforme' }, env),
+    openrouter: makeProviderConfig('openrouter', ['OPENROUTER'], { name: 'OpenRouter' }, env),
+    github: makeProviderConfig('github', ['GITHUB'], { name: 'GitHub Models' }, env),
+    cloudflare: {
+      id: 'cloudflare',
+      name: 'Cloudflare Workers AI',
+      accountId: String(env.CF_ACCOUNT_ID ?? '').trim(),
+      tokens: collectKeys(['CF', 'CLOUDFLARE'], { slots: 3, env }).length
+        ? collectKeys(['CF', 'CLOUDFLARE'], { slots: 3, env })
+        : toList(env.CF_API_TOKEN ?? ''),
+    },
+  };
+
+  for (const [providerId, profile] of Object.entries(PROVIDER_PROFILES)) {
+    const prefixes = profile.envPrefixes ?? [prefixForProviderId(providerId)];
+    configs[providerId] = makeProviderConfig(providerId, prefixes, profile, env);
+  }
+
+  const candidatePrefixes = new Map();
+  for (const [name, value] of Object.entries(env)) {
+    if (value === undefined || value === null || String(value).trim() === '') continue;
+    const prefix = keyPrefixFromEnvName(name);
+    if (!prefix) continue;
+    const providerId = providerIdForPrefix(prefix);
+    if (!candidatePrefixes.has(providerId)) candidatePrefixes.set(providerId, new Set());
+    candidatePrefixes.get(providerId).add(prefix.toUpperCase().replace(/-/g, '_'));
+  }
+
+  const unconfigured = [];
+  for (const [providerId, candidates] of candidatePrefixes) {
+    if (configs[providerId]) continue;
+    const prefixes = [...candidates];
+    const providerConfig = makeProviderConfig(providerId, prefixes, null, env);
+    if (providerConfig.keys.length && providerConfig.endpoint && providerConfig.models.length) {
+      configs[providerId] = providerConfig;
+    } else if (providerConfig.keys.length) {
+      unconfigured.push(providerId);
+    }
+  }
+
+  const detected = [...new Set([
+    ...candidatePrefixes.keys(),
+    ...Object.entries(configs)
+      .filter(([, provider]) => (provider.keys?.length ?? 0) > 0 || (provider.tokens?.length ?? 0) > 0)
+      .map(([providerId]) => providerId),
+  ])].sort();
+  const configured = detected.filter((providerId) => configs[providerId] && !unconfigured.includes(providerId));
+
+  return {
+    providers: Object.freeze(Object.fromEntries(Object.entries(configs).map(([id, provider]) => [id, Object.freeze(provider)]))),
+    scan: Object.freeze({
+      detected: Object.freeze(detected),
+      configured: Object.freeze(configured),
+      unconfigured: Object.freeze(unconfigured.sort()),
+    }),
+  };
 };
 
 /** Gemini thinkingBudget: -1 (dynamic) or 0..24576 (Flash range); anything else -> 0. */
@@ -102,6 +276,8 @@ export const TIER_LIMITS = {
 /* ------------------------------------------------------------------ *
  * Exported configuration object
  * ------------------------------------------------------------------ */
+const providerDiscovery = discoverProviderConfigs();
+
 export const config = Object.freeze({
   env: trimmed('NODE_ENV', 'production'),
   host: trimmed('HOST', '0.0.0.0'),
@@ -125,20 +301,9 @@ export const config = Object.freeze({
   /** Allow the mock provider to act as last-resort capacity when no real key is configured. */
   mockFallback: bool('MOCK_FALLBACK', true),
 
-  providers: Object.freeze({
-    gemini: Object.freeze({ keys: collectKeys('GEMINI') }),
-    groq: Object.freeze({ keys: collectKeys('GROQ') }),
-    cerebras: Object.freeze({ keys: collectKeys('CEREBRAS') }),
-    mistral: Object.freeze({ keys: collectKeys('MISTRAL') }),
-    openrouter: Object.freeze({ keys: collectKeys('OPENROUTER') }),
-    github: Object.freeze({ keys: collectKeys('GITHUB') }),
-    cloudflare: Object.freeze({
-      accountId: trimmed('CF_ACCOUNT_ID', ''),
-      tokens: collectKeys('CF', { slots: 3 }).length
-        ? collectKeys('CF', { slots: 3 })
-        : toList(raw('CF_API_TOKEN')),
-    }),
-  }),
+  /** Provider adapters discovered from named secret variables at process start. */
+  providers: providerDiscovery.providers,
+  providerScan: providerDiscovery.scan,
 
   /* ---------------- Request / routing behaviour ---------------- */
   maxAttempts: int('MAX_ATTEMPTS', 6),

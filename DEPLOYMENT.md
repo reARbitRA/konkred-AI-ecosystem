@@ -35,7 +35,7 @@ Credentials you need before deploying:
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | Telegram → `@BotFather` → `/newbot` |
 | `ADMIN_KEY` | `openssl rand -hex 32` |
-| ≥ 1 provider key | [Groq](https://console.groq.com/keys) · [Cerebras](https://cloud.cerebras.ai/) · [Gemini](https://aistudio.google.com/app/apikey) · [Mistral](https://console.mistral.ai/) · [OpenRouter](https://openrouter.ai/settings/keys) · [Cloudflare](https://dash.cloudflare.com/) · [GitHub Models](https://github.com/settings/tokens) |
+| ≥ 1 provider key | [Groq](https://console.groq.com/keys) · [Cerebras](https://cloud.cerebras.ai/) · [Gemini](https://aistudio.google.com/app/apikey) · [Mistral](https://console.mistral.ai/) · [OpenRouter](https://openrouter.ai/settings/keys) · APMIX · Agnes AI · DeepSeek · Hugging Face · OpenAI · [Cloudflare](https://dash.cloudflare.com/) · [GitHub Models](https://github.com/settings/tokens) |
 | Redis (options 2–4 only) | [Upstash](https://upstash.com/) free tier → copy the **TLS (rediss://)** endpoint |
 
 ---
@@ -49,7 +49,7 @@ Add these Vercel environment variables. Apply the sensitive provider secrets to 
 | Variable | Value |
 |---|---|
 | `USERS_JSON_BASE64` | Base64 of a JSON array containing one unique client key per server-side app, e.g. `[ {"key":"…","userId":"app-a","tier":"standard"} ]` |
-| Provider key(s) | At least one supported key: `GEMINI_KEY_P1`–`GEMINI_KEY_P6`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `MISTRAL_API_KEY`, or `OPENROUTER_API_KEY` |
+| Provider key(s) | Supported keys include `GEMINI_KEY_P1`–`GEMINI_KEY_P6`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `MISTRAL_API_KEY`, `OPENROUTER_API_KEY`, `APMIX_API_KEY`, `AGNES_API_KEY`, `DEEPSEEK_API_KEY`, `HUGGINGFACE_API_KEY`, and `OPENAI_API_KEY` |
 | `DEMO_MOCK` | `false` |
 | `MOCK_FALLBACK` | `false` |
 | `ADMIN_KEY` | Long random secret |
@@ -58,6 +58,8 @@ Add these Vercel environment variables. Apply the sensitive provider secrets to 
 | `ATTEMPT_TIMEOUT_MS` | `40000` |
 | `WATCHDOG_ENABLED` | `false` |
 | `DASHBOARD_ENABLED` | `false` |
+
+For another OpenAI-compatible provider, set its `<PREFIX>_API_KEY`, `<PREFIX>_BASE_URL` (base URL ending in `/v1`), and `<PREFIX>_MODEL` or `<PREFIX>_MODELS`. The Gateway scans variable names at startup; it never prints or returns key values. A provider with a different API protocol still needs a dedicated adapter because a key alone does not reveal its endpoint, model names, or request format.
 
 Generate `USERS_JSON_BASE64` without putting the client key in source control:
 

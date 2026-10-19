@@ -117,7 +117,16 @@ const handleModels = (req, res) => {
 
 const handleStatus = (req, res) => {
   requireAdmin(req);
-  return sendJson(res, 200, { ok: true, data: { ...gatewayStats(), providers: providerStats(), watchdog: watchdogStatus(), health: healthPayload() } });
+  return sendJson(res, 200, {
+    ok: true,
+    data: {
+      ...gatewayStats(),
+      providers: providerStats(),
+      providerKeyScan: config.providerScan,
+      watchdog: watchdogStatus(),
+      health: healthPayload(),
+    },
+  });
 };
 
 const handleAi = async (req, res) => {
@@ -245,6 +254,9 @@ const startServer = () => {
     });
     if (!activeProviderIds().length) {
       log.warn('server', 'no provider adapters are active — set at least one provider key or DEMO_MOCK=true');
+    }
+    if (config.providerScan.unconfigured.length) {
+      log.warn('server', `provider keys found without an endpoint/model config: ${config.providerScan.unconfigured.join(', ')}`);
     }
   });
   return server;

@@ -16,7 +16,7 @@
 ![KONKRED control rail](assets/readme/hero.svg)
 
 > [!IMPORTANT]
-> The registry currently contains **8 providers including the offline `mock` simulator and 19 models**. Availability depends on configured credentials and upstream limits; the gateway reports live capacity through its health surfaces.
+> The checked-in registry contains **8 providers including the offline `mock` simulator and 19 curated models**. Runtime profiles add APMIX, Agnes AI, DeepSeek, Hugging Face, and OpenAI; other OpenAI-compatible providers can be discovered from environment configuration. Availability still depends on valid credentials, model access, and upstream limits.
 
 ## System map
 
@@ -34,11 +34,13 @@ KONKRED is three runtime services: `bot` receives Telegram updates and owns the 
 
 ## Provider registry
 
-The source of truth is [`gateway/data/policies.registry.json`](gateway/data/policies.registry.json). It defines provider reset policies, privacy metadata, optional learned rate-limit headers, model limits, context windows, quality, and verification dates. The adapters currently cover:
+The source of truth for curated policies is [`gateway/data/policies.registry.json`](gateway/data/policies.registry.json). Runtime provider profiles and key detection live in [`gateway/src/providers/profiles.mjs`](gateway/src/providers/profiles.mjs) and [`gateway/src/config.mjs`](gateway/src/config.mjs). Native adapters cover Gemini and Cloudflare; OpenAI-compatible adapters cover:
 
 ![Provider rack](assets/readme/provider-rack.svg)
 
-`gemini` · `groq` · `cerebras` · `mistral` · `openrouter` · `cloudflare` · `github` · `mock`
+`groq` · `cerebras` · `mistral` · `openrouter` · `github` · `apmix` · `agnes` · `deepseek` · `huggingface` · `openai` · custom OpenAI-compatible providers · `mock`
+
+At startup, the Gateway scans variable **names** for provider key conventions such as `VENDOR_API_KEY`, `VENDOR_API_KEYS`, and `VENDOR_KEY_P1`. A known profile supplies its endpoint and default model. A new OpenAI-compatible provider needs `VENDOR_API_KEY`, `VENDOR_BASE_URL`, and `VENDOR_MODEL` or `VENDOR_MODELS`; `VENDOR_ENDPOINT` can specify the full chat-completions URL. A key by itself cannot reveal an arbitrary service's endpoint, model catalog, or wire protocol. The scanner never prints or returns secret values; `/api/status` reports detected/configured/missing-provider names to an authenticated admin.
 
 The `mock` adapter is intentionally an offline simulator for smoke tests and local development. It is not an upstream availability claim.
 
@@ -135,7 +137,7 @@ Telegram replies are split at a configurable limit (default 3900), measured in U
 |---|---|
 | Runtime | `NODE_ENV`, `PORT`, `HOST`, `LOG_LEVEL`, `PARSE_MODE` |
 | Caller/auth | `USERS_JSON`, `ADMIN_KEY`, `GATEWAY_API_KEY`, `ALLOWED_USER_IDS` |
-| Providers | `GEMINI_KEY_P1..P3`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `MISTRAL_API_KEY`, `OPENROUTER_API_KEY`, `CF_ACCOUNT_ID`, `CF_API_TOKEN`, `GITHUB_TOKEN` |
+| Providers | `GEMINI_KEY_P1..P6`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `MISTRAL_API_KEY`, `OPENROUTER_API_KEY`, `APMIX_API_KEY`, `AGNES_API_KEY`, `DEEPSEEK_API_KEY`, `HUGGINGFACE_API_KEY`, `OPENAI_API_KEY`, `CF_ACCOUNT_ID`, `CF_API_TOKEN`, `GITHUB_API_KEY`; custom OpenAI-compatible providers use `<PREFIX>_API_KEY`, `<PREFIX>_BASE_URL`, and `<PREFIX>_MODEL(S)` |
 | Gateway policy | `USER_RPM`, `USER_RPD`, `USER_TPD`, `COOLDOWN_AFTER_RATE_LIMIT_MS`, `COOLDOWN_AFTER_AUTH_FAILURE_MS`, `CONTEXT_TRIM_RATIO` |
 | Cache/dedup | `CACHE_ENABLED`, `CACHE_TTL_MS`, `CACHE_MAX_ENTRIES`, `DEDUP_ENABLED`, `DEDUP_TTL_MS` |
 | Bot/Redis | `TELEGRAM_BOT_TOKEN`, `GATEWAY_URL`, `GATEWAY_HEALTH_URL`, `REDIS_URL`, `CHUNK_SIZE`, `HISTORY_MAX_TURNS`, `HISTORY_TTL_SECONDS`, `GATEWAY_MAX_RETRIES`, `STARTUP_WAIT_TIMEOUT` |
@@ -169,7 +171,7 @@ The repository includes a Vercel Node Function adapter at [`api/[...path].mjs`](
 Set these environment variables in the Vercel project before using the API:
 
 - `USERS_JSON` (or `USERS_JSON_BASE64`, a base64-encoded JSON array): one record per client app, with a unique random `key`, `userId`, and tier.
-- At least one server-side provider secret, such as `GROQ_API_KEY` or `GEMINI_KEY_P1`.
+- At least one server-side provider secret, such as `GROQ_API_KEY`, `AGNES_API_KEY`, `APMIX_API_KEY`, `DEEPSEEK_API_KEY`, or `HUGGINGFACE_API_KEY`. For any additional OpenAI-compatible provider, also set its `*_BASE_URL` and `*_MODEL`/`*_MODELS` variables.
 - `DEMO_MOCK=false` and `MOCK_FALLBACK=false` so unavailable providers fail visibly instead of returning simulator output.
 - A strong `ADMIN_KEY`; also set `FULLKONK_KEY` if the FullKONK routes remain enabled.
 - `WATCHDOG_ENABLED=false`, `MAX_ATTEMPTS=2`, and `ATTEMPT_TIMEOUT_MS=40000` are recommended to keep multi-stage requests within the configured Vercel function duration.
