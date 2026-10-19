@@ -56,6 +56,17 @@ OPTIONAL_UNDOCUMENTED: Set[str] = {
     "OPENROUTER_TITLE",
 }
 
+# Provider profile variables are consumed through prefix-based key discovery,
+# so the static regex scanner cannot associate them with literal process.env reads.
+DYNAMIC_PROVIDER_VARIABLES: Set[str] = {
+    "APMIX_API_KEY", "APMIX_MODEL",
+    "AGNES_API_KEY", "AGNES_MODEL",
+    "DEEPSEEK_API_KEY", "DEEPSEEK_MODEL",
+    "HUGGINGFACE_API_KEY", "HUGGINGFACE_MODEL",
+    "OPENAI_API_KEY", "OPENAI_MODEL",
+    "GITHUB_API_KEY",
+}
+
 # Populated by setup.sh with a random secret; a blank template value is correct.
 REQUIRED_NON_EMPTY_IN_TEMPLATE: Set[str] = set()
 
@@ -153,6 +164,7 @@ def main() -> int:
     referenced: Set[str] = set()
     for paths in SOURCES.values():
         referenced |= scan(ROOT, paths)
+    referenced |= DYNAMIC_PROVIDER_VARIABLES
 
     # Compose interpolations like ${GATEWAY_PORT:-3000} count as references.
     missing = sorted(n for n in referenced if n not in template and n not in OPTIONAL_UNDOCUMENTED)

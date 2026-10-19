@@ -11,6 +11,8 @@
  *   POST /api/admin/cache/flush          (x-admin-key)
  */
 import http from 'node:http';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { config, enabledProviderIds } from './config.mjs';
 import { policyStore } from './policy-store.mjs';
 import { keyPool } from './gateway/key-pool.mjs';
@@ -38,7 +40,6 @@ let requestCount = 0;
 policyStore.load();
 keyPool.init();
 initProviders();
-startWatchdog();
 
 /* ------------------------------------------------------------------ *
  * Auth
@@ -66,6 +67,13 @@ const requireAdmin = (req) => {
  * ------------------------------------------------------------------ */
 const healthPayload = () => {
   const pool = keyPool.stats();
+  const eligibleProviders = pool.providers.filter((provider) =>
+    provider.id !== 'mock' || config.demoMock || config.mockFallback,
+  );
+  const usablePool = {
+    totalKeys: eligibleProviders.reduce((sum, provider) => sum + provider.keys, 0),
+    availableKeys: eligibleProviders.reduce((sum, provider) => sum + provider.available, 0),
+  };
   return {
     status: 'ok',
     service: 'konkred-gateway',
@@ -75,7 +83,7 @@ const healthPayload = () => {
     time: new Date().toISOString(),
     registry: { models: policyStore.models.length, providers: policyStore.providers.size, builtAt: policyStore.summary().registryBuiltAt },
     providers: activeProviderIds(),
-    pool: { keys: pool.totalKeys, available: pool.availableKeys },
+    pool: { keys: usablePool.totalKeys, available: usablePool.availableKeys },
     cache: responseCache.stats(),
   };
 };
@@ -109,7 +117,16 @@ const handleModels = (req, res) => {
 
 const handleStatus = (req, res) => {
   requireAdmin(req);
-  return sendJson(res, 200, { ok: true, data: { ...gatewayStats(), providers: providerStats(), watchdog: watchdogStatus(), health: healthPayload() } });
+  return sendJson(res, 200, {
+    ok: true,
+    data: {
+      ...gatewayStats(),
+      providers: providerStats(),
+      providerKeyScan: config.providerScan,
+      watchdog: watchdogStatus(),
+      health: healthPayload(),
+    },
+  });
 };
 
 const handleAi = async (req, res) => {
@@ -156,7 +173,7 @@ const routes = [
   { method: 'GET', path: '/v1/models', handler: handleOpenAiModels },
 ];
 
-const server = http.createServer((req, res) => {
+const handleRequest = (req, res) => {
   requestCount += 1;
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
   const pathname = url.pathname.replace(/\/+$/, '') || '/';
@@ -192,8 +209,9 @@ const server = http.createServer((req, res) => {
       if (status >= 500) log.error('http', `${code}: ${err?.stack ?? err}`);
       return sendJson(res, status, { ok: false, error: { code, message: err?.message ?? 'Request failed' } });
     });
-});
+};
 
+const server = http.createServer(handleRequest);
 server.headersTimeout = Math.max(65_000, config.attemptTimeoutMs + 5000);
 server.requestTimeout = 0; // long-running inference requests are governed by attemptTimeoutMs
 server.keepAliveTimeout = 65_000;
@@ -217,25 +235,36 @@ const shutdown = (signal) => {
   }, 10_000).unref?.();
 };
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('unhandledRejection', (reason) => log.error('process', `unhandledRejection: ${reason?.stack ?? reason}`));
-process.on('uncaughtException', (err) => {
-  log.error('process', `uncaughtException: ${err?.stack ?? err}`);
-  // Keep the container alive; the watchdog + healthcheck will surface real trouble.
-});
-
-server.listen(config.port, config.host, () => {
-  log.info('server', `listening on http://${config.host}:${config.port}`, {
-    providers: enabledProviderIds(),
-    demoMock: config.demoMock,
-    users: config.users.length,
-    registry: config.registryPath,
+const startServer = () => {
+  startWatchdog();
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('unhandledRejection', (reason) => log.error('process', `unhandledRejection: ${reason?.stack ?? reason}`));
+  process.on('uncaughtException', (err) => {
+    log.error('process', `uncaughtException: ${err?.stack ?? err}`);
+    // Keep the container alive; the watchdog + healthcheck will surface real trouble.
   });
-  if (!activeProviderIds().length) {
-    log.warn('server', 'no provider adapters are active — set at least one provider key or DEMO_MOCK=true');
-  }
-});
 
-export { server, healthPayload };
+  server.listen(config.port, config.host, () => {
+    log.info('server', `listening on http://${config.host}:${config.port}`, {
+      providers: enabledProviderIds(),
+      demoMock: config.demoMock,
+      users: config.users.length,
+      registry: config.registryPath,
+    });
+    if (!activeProviderIds().length) {
+      log.warn('server', 'no provider adapters are active — set at least one provider key or DEMO_MOCK=true');
+    }
+    if (config.providerScan.unconfigured.length) {
+      log.warn('server', `provider keys found without an endpoint/model config: ${config.providerScan.unconfigured.join(', ')}`);
+    }
+  });
+  return server;
+};
+
+const isMainModule = process.argv[1]
+  && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMainModule) startServer();
+
+export { server, healthPayload, handleRequest, startServer };
 export default server;

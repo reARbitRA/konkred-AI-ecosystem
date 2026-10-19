@@ -59,9 +59,26 @@ class PolicyStore {
       });
     }
 
+    // Add providers discovered from environment credentials. Dynamic providers
+    // expose models only when a key, compatible endpoint, and model are known.
+    for (const [id, providerConfig] of Object.entries(config.providers)) {
+      if (!providerConfig.models?.length) continue;
+      if (!this.#providers.has(id)) {
+        this.#providers.set(id, {
+          id,
+          name: providerConfig.name ?? id,
+          resetPolicy: providerConfig.resetPolicy ?? 'utc-midnight',
+          trainsOnData: Boolean(providerConfig.trainsOnData),
+          learnFromHeaders: null,
+          probe: { kind: 'openai-chat' },
+        });
+      }
+    }
+
     this.#models = new Map();
     this.#modelsByProvider = new Map();
-    for (const model of models) {
+    const allModels = [...models, ...Object.values(config.providers).flatMap((provider) => provider.models ?? [])];
+    for (const model of allModels) {
       for (const field of REQUIRED_MODEL_FIELDS) {
         if (!model?.[field]) throw new Error(`[policy-store] model record missing "${field}": ${JSON.stringify(model)}`);
       }

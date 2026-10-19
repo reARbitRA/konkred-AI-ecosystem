@@ -12,6 +12,17 @@ import { log } from '../util.mjs';
 
 const registry = new Map();
 
+const buildOpenAICompat = (providerId, name) => {
+  const providerConfig = config.providers[providerId] ?? {};
+  return new OpenAICompatProvider({
+    id: providerId,
+    name,
+    endpoint: providerConfig.endpoint ?? null,
+    authHeader: providerConfig.authHeader,
+    authScheme: providerConfig.authScheme,
+  });
+};
+
 const build = (providerId) => {
   const meta = policyStore.provider(providerId);
   const name = meta?.name ?? providerId;
@@ -27,10 +38,11 @@ const build = (providerId) => {
     case 'mistral':
     case 'openrouter':
     case 'github':
-      return new OpenAICompatProvider({ id: providerId, name });
+      return buildOpenAICompat(providerId, name);
     default:
-      // Unknown providers default to the OpenAI-compatible shape.
-      return new OpenAICompatProvider({ id: providerId, name, endpoint: process.env[`${providerId.toUpperCase()}_BASE_URL`] ?? null });
+      // Unknown providers use the OpenAI-compatible adapter. Their key, endpoint,
+      // model list, and optional auth-header convention are discovered in config.
+      return buildOpenAICompat(providerId, name);
   }
 };
 

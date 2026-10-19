@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    { "source": "/v1/:path*", "destination": "/api/v1/:path*" },
+    { "source": "/", "destination": "/api/health" }
+  ],
+  "functions": {
+    "api/[...path].mjs": {
+      "maxDuration": 300,
+      "includeFiles": "gateway/data/policies.registry.json"
+    }
+  }
+}
